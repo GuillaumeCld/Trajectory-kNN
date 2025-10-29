@@ -1,0 +1,12 @@
+[project]
+name = "Spatiotemporal-Anomaly-Detection"
+version = "0.1.0"
+description = "A Python package for detecting anomalies in spatiotemporal data from netCDF files."
+
+authors = [
+    { name = "Guillaume Coulaud", email = "guillaume.coulaud@inria.fr" }
+]
+
+
+[tool.setuptools]
+packages = ["src"]

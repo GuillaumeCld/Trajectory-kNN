@@ -1,0 +1,19 @@
+name: spatiotemporal_anomalies 
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - xarray
+  - netcdf4
+  - cftime
+  - pytorch
+  - torchvision
+  - torchaudio
+  - matplotlib
+  - tqdm
+  - kaleido
+  - plotly
