@@ -43,7 +43,7 @@ def double_precision_scoring(nc_path, var, k, traj_length):
 nc_path = "Data/era5_msl_daily_eu_small.nc"
 var = "msl"
 k = 1
-traj_length = 3 
+traj_length = 7 
  
 scores_double, _ = double_precision_scoring(nc_path, var, k, traj_length)
 

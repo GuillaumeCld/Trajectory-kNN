@@ -107,11 +107,11 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
 
 if __name__ == "__main__":
 
-    traj_length = 3
+    traj_length = 5
     k = 30
-
+    parameter = "hgt"
     scores, time = knn_scores(
-        "Data/era5_msl_daily_eu.nc", "msl", traj_length, k, q_batch=256, r_chunk=4096*2, device="cuda")
+        "Data/hgt_anom_daily_eu.nc", parameter, traj_length, k, q_batch=256, r_chunk=4096, device="cuda")
 
     # Plot
     fig = px.line(x=time, y=scores.numpy(), labels={
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     top100_dates = [pd.to_datetime(time[idx]).date() for idx in top100_idx]
     df = pd.DataFrame(
         {"date": top100_dates, "anomaly_score": scores.numpy()[top100_idx]})
-    df.to_csv(f"result/traj/top100_anomalous_dates_{traj_length}_{k}.csv", index=False)
+    df.to_csv(f"result/traj/{parameter}_top100_anomalous_dates_{traj_length}_{k}.csv", index=False)
 
     # print abnormal threshold score with IQR method, percentile 95
     q75, q25 = np.percentile(scores.numpy(), [75, 25])
@@ -162,6 +162,6 @@ if __name__ == "__main__":
     ax.set_xticks(counts.index)
     ax.set_xticklabels(counts.index, rotation=45)
     plt.tight_layout()
-    out_path = f"result/traj/anomaly_scores_above_99th_per_year_{traj_length}_{k}.png"
+    out_path = f"result/traj/parameter_anomaly_scores_above_99th_per_year_{traj_length}_{k}.png"
     plt.savefig(out_path, dpi=200)
     plt.close(fig)

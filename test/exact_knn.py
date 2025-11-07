@@ -52,3 +52,7 @@ relative_error = diff / torch.clamp_min(torch.abs(scores_double), 1e-6)
 print(f"Max relative error: {relative_error.max().item():.2e}") 
 print(f"Mean relative error: {relative_error.mean().item():.2e}")
 print(f"Std relative error: {relative_error.std().item():.2e}")
+
+
+
+

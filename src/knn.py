@@ -4,6 +4,10 @@ import numpy as np
 import plotly.express as px
 from tqdm import tqdm
 import pandas as pd
+import os
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
 @torch.compile
@@ -94,8 +98,9 @@ if __name__ == "__main__":
 
     k = 30
 
+    parameter = "hgt"
     scores, time = knn_scores(
-        "Data/era5_msl_daily_eu.nc", "msl", k=k, q_batch=256, r_chunk=4096*2, device="cuda")
+        "Data/hgt_anom_daily_eu.nc", parameter, k, q_batch=256, r_chunk=4096, device="cuda")
 
     # Plot
     fig = px.line(x=time, y=scores.numpy(), labels={
@@ -108,7 +113,7 @@ if __name__ == "__main__":
     top100_dates = [pd.to_datetime(time[idx]).date() for idx in top100_idx]
     df = pd.DataFrame(
         {"date": top100_dates, "anomaly_score": scores.numpy()[top100_idx]})
-    df.to_csv(f"result/single/top100_anomalous_dates_{k}.csv", index=False)
+    df.to_csv(f"result/single/{parameter}_top100_anomalous_dates_{k}.csv", index=False)
 
     # print abnormal threshold score with IQR method, percentile 95
     q75, q25 = np.percentile(scores.numpy(), [75, 25])
@@ -141,6 +146,6 @@ if __name__ == "__main__":
     ax.set_xticks(counts.index)
     ax.set_xticklabels(counts.index, rotation=45)
     plt.tight_layout()
-    out_path = f"result/single/anomaly_scores_above_99th_per_year_{k}.png"
+    out_path = f"result/single/{parameter}_anomaly_scores_above_99th_per_year_{k}.png"
     plt.savefig(out_path, dpi=200)
     plt.close(fig)
