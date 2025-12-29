@@ -9,6 +9,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+import time 
 
 @torch.compile
 def knn_scores(nc_path, var, k=10, q_batch=128, r_chunk=4096, device=None):
@@ -98,19 +99,27 @@ if __name__ == "__main__":
 
     k = 30
 
-    parameter = "hgt"
-    scores, time = knn_scores(
-        "Data/hgt_anom_daily_eu.nc", parameter, k, q_batch=256, r_chunk=4096, device="cuda")
+    parameter = "msl"
+    start_time = time.time()
+    scores, times = knn_scores(
+        "Data/era5_msl_daily_eu.nc", parameter, k, q_batch=256, r_chunk=4096, device="cuda")
+
+    end_time = time.time()
+    print(f"k-NN scoring completed in {end_time - start_time:.2f} seconds.")
+    # save scores and time to a npz file
+    out_dir = f"result/single/"
+    out_path = os.path.join(out_dir, f"{parameter}_knn_scores_{k}.npz")
+    np.savez(out_path, scores=scores.numpy(), time=times)
 
     # Plot
-    fig = px.line(x=time, y=scores.numpy(), labels={
+    fig = px.line(x=times, y=scores.numpy(), labels={
                 "x": "Time", "y": "Anomaly Score"})
     fig.show()
 
     top100_idx = np.argsort(-scores.numpy())[:100]
 
     # save the top dates to  a csv file
-    top100_dates = [pd.to_datetime(time[idx]).date() for idx in top100_idx]
+    top100_dates = [pd.to_datetime(times[idx]).date() for idx in top100_idx]
     df = pd.DataFrame(
         {"date": top100_dates, "anomaly_score": scores.numpy()[top100_idx]})
     df.to_csv(f"result/single/{parameter}_top100_anomalous_dates_{k}.csv", index=False)
@@ -129,7 +138,7 @@ if __name__ == "__main__":
     print(f"95th percentile score: {percentile_95:.3e}")
 
     # Bar chart of the number of score above 99th percentile per year
-    years = pd.to_datetime(time).year
+    years = pd.to_datetime(times).year
     df_scores = pd.DataFrame({
         "year": years,
         "score": scores.numpy()

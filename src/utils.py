@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -5,6 +6,7 @@ import os
 from scipy.signal import detrend
 import cftime
 from scipy.io import loadmat
+
 
 def remove_daily_climatology(data, time):
     """
@@ -24,12 +26,22 @@ def remove_daily_climatology(data, time):
     return data
 
 
-
 def save_subset(nc_path):
     ds = xr.open_dataset(nc_path)
     n_time = 365 * 5
     ds = ds.isel(time=slice(0, n_time))
     ds.to_netcdf(f"Data/era5_msl_daily_eu_small.nc")
+
+
+def save_trajectory_subset(nc_path, date_start="1989-02-25", traj_length=5):
+    ds = xr.open_dataset(nc_path)
+    time = pd.to_datetime(ds["time"].values)
+    start_idx = np.where(time == pd.to_datetime(date_start))[0][0]
+    ds_sub = ds.isel(time=slice(start_idx, start_idx + traj_length))
+    out_path = f"Data/era5_msl_daily_eu_traj_{date_start.replace('-', '')}_len{traj_length}.nc"
+    ds_sub.to_netcdf(out_path)
+    print(f"Saved: {out_path}")
+
 
 def validate_z500_anomalies(
     original_ds_path,
@@ -37,7 +49,8 @@ def validate_z500_anomalies(
     *,
     var_name="z500",
     groupby_key="auto",       # "auto", "mmdd", or "dayofyear"
-    daily_mean_atol=1e-6,     # tighten/loosen as needed; 1e-3 is common for geopotential in SI
+    # tighten/loosen as needed; 1e-3 is common for geopotential in SI
+    daily_mean_atol=1e-6,
     recon_atol=1e-6,
     slope_check_points=3,
     slope_rel_tol=0.1,
@@ -57,13 +70,17 @@ def validate_z500_anomalies(
     # 1) Time axis checks
     assert anom.indexes["time"].is_unique, "Duplicate timestamps in anomalies."
     dt = np.diff(t.values.astype("datetime64[ns]"))
-    assert (dt > np.timedelta64(0, "ns")).all(), "Anomalies 'time' is not strictly increasing."
+    assert (dt > np.timedelta64(0, "ns")).all(
+    ), "Anomalies 'time' is not strictly increasing."
 
     # 2) No Feb 29
-    assert not (((t.dt.month == 2) & (t.dt.day == 29)).any().item()), "Found Feb 29 in anomalies."
+    assert not (((t.dt.month == 2) & (t.dt.day == 29)).any().item()
+                ), "Found Feb 29 in anomalies."
 
     # --- Helper: compute residuals under a given key ---
-    KeyRes = namedtuple("KeyRes", "name key_labels n_unique max_abs_daily_mean daily_mean")
+    KeyRes = namedtuple(
+        "KeyRes", "name key_labels n_unique max_abs_daily_mean daily_mean")
+
     def _res_for(keyname):
         if keyname == "mmdd":
             labels = t.dt.strftime("%m-%d")
@@ -79,7 +96,7 @@ def validate_z500_anomalies(
     # 3) Decide grouping key
     if groupby_key == "auto":
         r_mmdd = _res_for("mmdd")
-        r_doy  = _res_for("dayofyear")
+        r_doy = _res_for("dayofyear")
         # Prefer 365 keys if available; otherwise choose smaller residual
         if r_mmdd.n_unique == 365 and (r_doy.n_unique != 365 or r_mmdd.max_abs_daily_mean <= r_doy.max_abs_daily_mean):
             chosen = r_mmdd
@@ -101,7 +118,8 @@ def validate_z500_anomalies(
         # (works for both mmdd and dayofyear; convert to a readable label)
         dm = chosen.daily_mean
         # collapse spatial dims to a scalar per day to rank (use mean of abs)
-        reduce_dims = [d for d in dm.dims if d != dm.dims[0]]  # first dim is the grouping dim
+        # first dim is the grouping dim
+        reduce_dims = [d for d in dm.dims if d != dm.dims[0]]
         perday = np.abs(dm).mean(reduce_dims, skipna=True)
         # pick top 5
         worst_idx = perday.argsort()[-5:].values
@@ -114,9 +132,11 @@ def validate_z500_anomalies(
     # 6) Trend check vs original
     ds0 = xr.open_dataset(original_ds_path)
     if "plev" in ds0.dims:
-        ds0 = ds0.squeeze("plev", drop=True) if ds0.sizes["plev"] == 1 else ds0.isel(plev=0, drop=True)
+        ds0 = ds0.squeeze("plev", drop=True) if ds0.sizes["plev"] == 1 else ds0.isel(
+            plev=0, drop=True)
     orig = ds0[var_name]
-    orig = orig.sel(time=~((orig.time.dt.month == 2) & (orig.time.dt.day == 29)))
+    orig = orig.sel(time=~((orig.time.dt.month == 2)
+                    & (orig.time.dt.day == 29)))
     orig, anom = xr.align(orig, anom, join="inner")
 
     def _slope(time_values, y):
@@ -130,19 +150,23 @@ def validate_z500_anomalies(
     points = []
     if {"lat", "lon"} <= dims:
         lat_n, lon_n = orig.sizes["lat"], orig.sizes["lon"]
-        points = [(0,0), (lat_n//2, lon_n//2), (lat_n-1, lon_n-1)][:max(1, slope_check_points)]
+        points = [(0, 0), (lat_n//2, lon_n//2), (lat_n-1, lon_n-1)
+                  ][:max(1, slope_check_points)]
     else:
         points = [None]
 
     worst_rel = 0.0
     worst_abs = 0.0
     for pt in points:
-        y_orig = orig.values if pt is None else orig.isel(lat=pt[0], lon=pt[1]).values
-        y_anom = anom.values if pt is None else anom.isel(lat=pt[0], lon=pt[1]).values
+        y_orig = orig.values if pt is None else orig.isel(
+            lat=pt[0], lon=pt[1]).values
+        y_anom = anom.values if pt is None else anom.isel(
+            lat=pt[0], lon=pt[1]).values
         m_orig = abs(_slope(orig.time.values, y_orig))
         m_anom = abs(_slope(anom.time.values, y_anom))
         if not (np.isnan(m_orig) or np.isnan(m_anom)):
-            worst_rel = max(worst_rel, (m_anom / m_orig) if m_orig > 0 else 0.0)
+            worst_rel = max(worst_rel, (m_anom / m_orig)
+                            if m_orig > 0 else 0.0)
             worst_abs = max(worst_abs, m_anom)
             assert (m_anom < m_orig * slope_rel_tol) or (m_anom < slope_abs_atol), (
                 f"Trend not adequately removed (post={m_anom}, pre={m_orig})."
@@ -179,7 +203,6 @@ def validate_z500_anomalies(
     }
 
 
-
 def pp_geopot(filepath):
 
     ds = xr.open_dataset(filepath)
@@ -205,10 +228,12 @@ def pp_geopot(filepath):
     )
 
     # Remove Feb 29
-    z500 = z500.sel(time=~((z500.time.dt.month == 2) & (z500.time.dt.day == 29)))
+    z500 = z500.sel(time=~((z500.time.dt.month == 2)
+                    & (z500.time.dt.day == 29)))
 
     # Group by mm-dd (365 unique keys) to build climatology
-    mmdd = z500.time.dt.strftime("%m-%d").rename("mmdd")  # labels like '01-01', '12-31'
+    # labels like '01-01', '12-31'
+    mmdd = z500.time.dt.strftime("%m-%d").rename("mmdd")
     clim = z500.groupby(mmdd).mean("time", skipna=True)
 
     # Anomalies w.r.t. that 365-day climatology
@@ -219,7 +244,6 @@ def pp_geopot(filepath):
 
     z500_anom.to_netcdf("Data/z500_anom_daily_eu.nc")
 
-from datetime import datetime, timedelta
 
 def mat_to_netcdf(mat_path, out_path='output.nc'):
     mat = loadmat(mat_path)
@@ -228,7 +252,8 @@ def mat_to_netcdf(mat_path, out_path='output.nc'):
     lon = np.squeeze(mat['lon'])
 
     ntime = hgt.shape[0]
-    assert ntime == 72 * 365, "Expected 72 years (1950–2021) of daily data, no leap days."
+    assert ntime == 72 * \
+        365, "Expected 72 years (1950–2021) of daily data, no leap days."
 
     # Build a no-leap time vector
     years = np.arange(1950, 2022)
@@ -258,10 +283,14 @@ def mat_to_netcdf(mat_path, out_path='output.nc'):
     ds.to_netcdf(out_path, format='NETCDF4', encoding=enc)
     print(f"Saved: {out_path}")
 
-if __name__ == "__main__":
-    filepath = "Data/era5_z500_daily_eu.nc"
-    # pp_geopot(filepath)
 
-    mat_path = "Data/ERA5_hgt_1950_2021_anomalies_withoutbsx.mat"
-    out_path = "Data/hgt_anom_daily_eu.nc"
-    mat_to_netcdf(mat_path, out_path)
+if __name__ == "__main__":
+    # filepath = "Data/era5_z500_daily_eu.nc"
+    # # pp_geopot(filepath)
+
+    # mat_path = "Data/ERA5_hgt_1950_2021_anomalies_withoutbsx.mat"
+    # out_path = "Data/hgt_anom_daily_eu.nc"
+    # mat_to_netcdf(mat_path, out_path)
+
+    file_path = "Data/era5_msl_daily_eu.nc"
+    save_trajectory_subset(file_path, date_start="1989-02-25 11:30:00", traj_length=5)

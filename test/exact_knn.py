@@ -31,28 +31,75 @@ def double_precision_scoring(nc_path, var, k):
     return scores, time
 
 
+def double_precision_distance_matrix(nc_path, var):
+    ds = xr.open_dataset(nc_path)
+    da = ds[var]
+
+    spatial_dims = [d for d in da.dims if d != "time"]
+
+    data = da.transpose("time", *spatial_dims).values.astype(np.float64)
+    y = 10
+    data = data
+    time = ds["time"].values
+    ds.close()
+
+    T, H, W = data.shape
+    D = H * W  
+
+    device = "cpu" 
+    dev = torch.device(device)
+
+    X = torch.from_numpy(data).to(torch.float32).reshape(
+        T, D).to(dev)
+    
+    distances = torch.cdist(X, X, p=2) 
+
+    return distances
 
 
-nc_path = "Data/era5_msl_daily_eu_small.nc"
-var = "msl"
-k = 1
+def test_knn_scores():
+    nc_path = "Data/era5_msl_daily_eu_small.nc"
+    var = "msl"
+    k = 1
 
-scores_double, _ = double_precision_scoring(nc_path, var, k)
+    scores_double, _ = double_precision_scoring(nc_path, var, k)
 
-scores_single, _ = knn_scores(nc_path, var, k=k, device="cuda")
+    scores_single, _ = knn_scores(nc_path, var, k=k, device="cuda")
 
-# Numerical accuracy check
-diff = torch.abs(scores_double - scores_single.to(torch.float64))
-# diff stats
-print(f"Max difference: {diff.max().item():.2e}")
-print(f"Mean difference: {diff.mean().item():.2e}")
-print(f"Std difference: {diff.std().item():.2e}")
-# Relative error
-relative_error = diff / torch.clamp_min(torch.abs(scores_double), 1e-6)
-print(f"Max relative error: {relative_error.max().item():.2e}") 
-print(f"Mean relative error: {relative_error.mean().item():.2e}")
-print(f"Std relative error: {relative_error.std().item():.2e}")
-
-
+    # Numerical accuracy check
+    diff = torch.abs(scores_double - scores_single.to(torch.float64))
+    # diff stats
+    print(f"Max difference: {diff.max().item():.2e}")
+    print(f"Mean difference: {diff.mean().item():.2e}")
+    print(f"Std difference: {diff.std().item():.2e}")
+    # Relative error
+    relative_error = diff / torch.clamp_min(torch.abs(scores_double), 1e-6)
+    print(f"Max relative error: {relative_error.max().item():.2e}") 
+    print(f"Mean relative error: {relative_error.mean().item():.2e}")
+    print(f"Std relative error: {relative_error.std().item():.2e}")
 
 
+def plot_distance_matrix():
+    nc_path = "Data/hgt_anom_daily_eu.nc"
+    var = "hgt"
+
+    distances = double_precision_distance_matrix(nc_path, var)
+
+    import matplotlib.pyplot as plt
+
+    # plt.plot(distances[0, :])
+    # plt.show()
+    # for i in range(distances.shape[0]):
+    #     for j in range(distances.shape[1]):
+    #         distances[i,j] = np.nan
+
+    distances = distances[:365, 10*365:11*365]
+    plt.imshow(distances)
+    # plt.colorbar()
+    plt.show()
+
+
+
+if __name__ == "__main__":
+
+    plot_distance_matrix()

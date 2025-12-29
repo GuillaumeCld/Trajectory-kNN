@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 from tqdm import tqdm
 import pandas as pd
-
+import time, os
 torch.backends.cudnn.benchmark = True
 
 
@@ -106,62 +106,40 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
 
 
 if __name__ == "__main__":
+    traj_length = 1
 
-    traj_length = 5
+    # for traj_length in range(1, 20, 1):
+    traj_length = 11
     k = 30
-    parameter = "hgt"
-    scores, time = knn_scores(
-        "Data/hgt_anom_daily_eu.nc", parameter, traj_length, k, q_batch=256, r_chunk=4096, device="cuda")
+    parameter = "msl"
+    start_time = time.time()
+    scores, times = knn_scores(
+        "Data/era5_msl_daily_eu.nc", parameter, traj_length, k, q_batch=256, r_chunk=4096, device="cuda")
+    end_time = time.time()
+
+    print(f"Trajectory of length {traj_length} k-NN scoring completed in {end_time - start_time:.2f} seconds.")
+
+
+    # save scores and time to a npz file
+    out_dir = f"result/traj/"
+    out_path = os.path.join(out_dir, f"{parameter}_knn_scores_traj{traj_length}_{k}.npz")
+    np.savez(out_path, scores=scores.numpy(), time=times)
+
 
     # Plot
-    fig = px.line(x=time, y=scores.numpy(), labels={
+    fig = px.line(x=times, y=scores.numpy(), labels={
         "x": "Time", "y": "Anomaly Score"})
     fig.show()
 
     top100_idx = np.argsort(-scores.numpy())[:100]
-    for i, idx in enumerate(top100_idx):
-        print(
-           f"{i+1} {pd.to_datetime(time[idx]).date()}: {scores[idx].item():.3e}")
+    # for i, idx in enumerate(top100_idx):
+    #     print(
+    #     f"{i+1} {pd.to_datetime(times[idx]).date()}: {scores[idx].item():.3e}")
 
     # save the top dates to  a csv file
-    top100_dates = [pd.to_datetime(time[idx]).date() for idx in top100_idx]
+    top100_dates = [pd.to_datetime(times[idx]).date() for idx in top100_idx]
     df = pd.DataFrame(
         {"date": top100_dates, "anomaly_score": scores.numpy()[top100_idx]})
     df.to_csv(f"result/traj/{parameter}_top100_anomalous_dates_{traj_length}_{k}.csv", index=False)
 
-    # print abnormal threshold score with IQR method, percentile 95
-    q75, q25 = np.percentile(scores.numpy(), [75, 25])
-    iqr = q75 - q25
-    abnormal_threshold = q75 + 1.5 * iqr
-    print(f"Abnormal threshold score (IQR method): {abnormal_threshold:.3e}")
-    # print number of scores above abnormal thresholds
-    num_abnormal = (scores.numpy() > abnormal_threshold).sum()
-    print(f"Number of abnormal windows (score > threshold): {num_abnormal}")
-    percentile_95 = np.percentile(scores.numpy(), 95)
-    percentile_99 = np.percentile(scores.numpy(), 99)
-    print(f"99th percentile score: {percentile_99:.3e}")
-    print(f"95th percentile score: {percentile_95:.3e}")
-
-
-    # Bar chart of the number of score above 99th percentile per year
-    years = pd.to_datetime(time).year
-    df_scores = pd.DataFrame({
-        "year": years,
-        "score": scores.numpy()
-    })
-    threshold_99 = percentile_99
-    df_above_99 = df_scores[df_scores["score"] > threshold_99]
-    counts = df_above_99["year"].value_counts().sort_index()    
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.bar(counts.index, counts.values, color='C0')
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Number of scores above 99th percentile")
-    ax.set_title("Number of anomaly scores above 99th percentile per year")
-    ax.set_xticks(counts.index)
-    ax.set_xticklabels(counts.index, rotation=45)
-    plt.tight_layout()
-    out_path = f"result/traj/parameter_anomaly_scores_above_99th_per_year_{traj_length}_{k}.png"
-    plt.savefig(out_path, dpi=200)
-    plt.close(fig)
+        

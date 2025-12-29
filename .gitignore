@@ -2,3 +2,4 @@
 Data/*.nc
 Data/*.mat
 result/**/*
+src/__pycache__/*
