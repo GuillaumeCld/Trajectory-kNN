@@ -24,7 +24,10 @@ def blocked_norm_compute(X, block_size, dev):
 
 
 @torch.no_grad()
-def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, device=None, dtype=torch.float32):
+def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, device=None, dtype=torch.float32, exclusion_zone=-1):
+    if exclusion_zone == -1:
+        exclusion_zone = traj_length
+
     # Load dataset
     start_time = time.time()
     ds = xr.open_dataset(nc_path)
@@ -37,7 +40,7 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     data -= c  # remove mean
     end_time = time.time()
     # print(f"Data loading took {end_time - start_time:.2f} seconds.")
-    # time = ds["time"].values
+    times = ds["time"].values
     ds.close()
 
     T, H, W = data.shape
@@ -117,17 +120,28 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
         )
         distances_traj[0] = distances_traj0[i]  # uses symmetry: D_i(0) = D_0(i)
         distances_traj = distances_traj.clamp(min=0.0)
-        # remove self-match at j=i +- L/2
-        distances_traj[i] = float("inf")
+        # remove self-match at j=i +- L
+        self_matchs = range(max(0, i - exclusion_zone + 1), min(N, i + exclusion_zone))
+        distances_traj[self_matchs] = float("inf")
 
-        sorted_distances, _ = torch.topk(distances_traj, k=k+1, largest=False)
-        scores[i] = sorted_distances[1:k+1].mean()
+
+        sorted_distances, sorted_indices = torch.topk(distances_traj, k=k*exclusion_zone, largest=False)
+        current_mins = [sorted_indices[0].item()]
+        for idx in sorted_indices[1:]:
+            idx_item = idx.item()
+            if all(abs(idx_item - cm) >= exclusion_zone for cm in current_mins):
+                current_mins.append(idx_item)
+            if len(current_mins) >= k:
+                break
+
+
+        scores[i] = distances_traj[current_mins].mean()
     end_time = time.time()
     # print(f"Trajectory distances and k-NN scoring took {end_time - start_time:.2f} seconds.")
 
     # scores = scores.clamp(min=0.0)
     # scores = torch.sqrt(scores)
-    return scores.to("cpu"), _
+    return scores.to("cpu"), times
 
 
 def similarity_compute(nc_path_hist, nc_path_query, var, r_chunk=4096, device=None, dtype=torch.float32):
@@ -189,9 +203,12 @@ def similarity_compute(nc_path_hist, nc_path_query, var, r_chunk=4096, device=No
 if __name__ == "__main__":
 
     etimes = []
-    # for traj_length in range(1, 30, 1):
+# for traj_length in range(1, 30, 1):
     traj_length = 5
-    k = 30
+    ks = [i if i != 0 else 1 for i in range(0, 101, 5)]
+
+    # for k in ks:
+    k = 10
     parameter = "msl"
     start_time = time.time()
     scores, times = knn_scores(
@@ -202,11 +219,19 @@ if __name__ == "__main__":
 
     out_dir = "result/traj/"
     out_path = os.path.join(
-        out_dir, f"{parameter}_trajlen{traj_length}_k{k}.npz")
-    # np.savez(out_path, scores=scores, times=np.array(times))
+        out_dir, f"{parameter}_trajlen{traj_length}_k{k}_exclusion.npz")
+    np.savez(out_path, scores=scores, times=np.array(times))
 
     print(f"traj_length={traj_length}, k={k}, time={elapsed:.2f} seconds.")
     print(f"Minimum score: {scores.min().item():.4f}")
 
-    # np.savetxt("effi_traj_2_times_cpu.txt", np.array(etimes))
+    np.savetxt("effi_traj_2_times_gpu.txt", np.array(etimes))
+
+    top_100_dates = np.argsort(scores.numpy())[:100]
+    top_100_times = times[top_100_dates]
+    df = pd.DataFrame({"time": top_100_times, "score": scores.numpy()[top_100_dates]})
+    df.to_csv(f"effi_traj_2_top100_trajlen{traj_length}_k{k}_exclusion.csv", index=False)   
+    print("Finished all computations.")
+
+
     
