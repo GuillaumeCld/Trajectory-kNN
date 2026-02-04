@@ -1,13 +1,13 @@
 import torch
 import xarray as xr
 import numpy as np
-import plotly.express as px
 from tqdm import tqdm
 import pandas as pd
 import time
 import os
+# from memory_profiler import profile
 
-
+import matplotlib.pyplot as plt
 torch.backends.cudnn.benchmark = False
 torch.set_float32_matmul_precision('highest')
 
@@ -21,118 +21,114 @@ def blocked_norm_compute(X, block_size, dev):
         norms[block_start:block_end] = (block * block).sum(dim=1)
     return norms
 
+@torch.no_grad()
+def d_space_block(rows, row_norms, cols, col_norms):
+    return row_norms[:, None] + col_norms[None, :] - 2.0 * (rows @ cols.T)
+
 
 @torch.no_grad()
-def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, device=None, dtype=torch.float32):
-    # Load dataset
-    start_time = time.time()
-    ds = xr.open_dataset(nc_path)
-    da = ds[var]
+def compute_d_space(rows, row_norms, cols, col_norms):
+    # rows: (R, D), cols: (C, D)
+    return row_norms[:, None] + col_norms[None, :] - 2.0 * (rows @ cols.T)
 
-    spatial_dims = [d for d in da.dims if d != "time"]
-    # (T, H, W) !!! load all data into memory !!!
-    data = da.transpose("time", *spatial_dims).values.astype(np.float32)
-    end_time = time.time()
-    print(f"Data loading took {end_time - start_time:.2f} seconds.")
-    # time = ds["time"].values
-    ds.close()
 
+def compute_distances_and_scores(
+    data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone
+):
     T, H, W = data.shape
-    D = H * W  # vectorize spatial dimensions
-
-    # Choose device for compute if not specified
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    dev = torch.device(device)
-
-    # Move full dataset to device once so all computation stays on device
-    start_time = time.time()
-    X_cpu = torch.from_numpy(data).to(dtype).reshape(
-        T, D)  # (T, D) on device
-    if dev.type == "cuda":
-        X_cpu = X_cpu.pin_memory()
-    end_time = time.time()
-    print(f"Data transfer to {dev} took {end_time - start_time:.2f} seconds.")
-
-    # Precompute norms on device
-    start_time = time.time()
-    norms = blocked_norm_compute(X_cpu, r_chunk, dev)
-    end_time = time.time()
-    print(f"Norms computation on {dev} took {end_time - start_time:.2f} seconds.")
-
-    N = T - traj_length + 1
-    scores = torch.empty(N, dtype=dtype, device="cpu")
-
-
-
-    distances_space = torch.empty((T, T), dtype=dtype, device="cpu")
-    # blocked outer loop on rows, loop over time
-    start_time = time.time()
-    for row_start in range(0, T, q_batch):
-        row_end = min(row_start + q_batch, T)
-
-        rows = X_cpu[row_start:row_end].to(dev, non_blocking=True)
-        row_norms = norms[row_start:row_end].to(dev, non_blocking=True)
-        # blocked inner loop on columns, loop over time
-        for column_start in range(0, T, r_chunk):
-            column_end = min(column_start + r_chunk, T)
-
-
-            # compute distance of the block, distance on space fields
-            
-            cols = X_cpu[column_start:column_end].to(dev, non_blocking=True)
-            col_norms = norms[column_start:column_end].to(dev, non_blocking=True)
-            # distances_ij -> distance between space fields of time i and j
-            distances = row_norms[:, None] + col_norms[None, :] - 2.0 * (rows @ cols.T)
-            distances_space[row_start:row_end, column_start:column_end] = distances.to("cpu")
-
-    end_time = time.time()
-    print(f"Space distances computation took {end_time - start_time:.2f} seconds.")
-
-    start_time = time.time()
-    # compute trajectory distances 
+    D = H * W
     L = traj_length
     N = T - L + 1
 
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    dev = torch.device(device)
 
+    X = torch.from_numpy(data).to(dtype).reshape(T, D).to(dev)
+    norms = blocked_norm_compute(X, r_chunk, dev)
 
-    # D_0(j) = sum_{t=0..L-1} d_space(t, j+t)
-    distances_traj0 = torch.zeros(N, dtype=dtype, device="cpu")
-    for t_offset in range(L):
-        distances_traj0 += distances_space[t_offset, t_offset:t_offset + N]
+    scores = torch.empty(N, dtype=dtype, device="cpu")
+
+    # -------------------------
+    # D_0 computation (batched)
+    # -------------------------
+    distances_traj0 = torch.zeros(N, dtype=dtype, device=dev)
+
+    for t in range(L):
+        rows = X[t:t+1]
+        row_norms = norms[t:t+1]
+        cols = X[t:t+N]
+        col_norms = norms[t:t+N]
+
+        distances_traj0 += d_space_block(rows, row_norms, cols, col_norms).squeeze(0)
 
     distances_traj = distances_traj0.clone()
 
     sorted_distances, _ = torch.topk(distances_traj, k=k+1, largest=False)
-    scores[0] = sorted_distances[1:k+1].mean()
+    scores[0] = sorted_distances[1:k+1].mean().cpu()
 
-    # Recurrence for i = 1..N-1:
-    # D_i(j) = D_{i-1}(j-1) - d_space(i-1, j-1) + d_space(i+L-1, j+L-1), for j>=1
-    for i in range(1, N):
-        distances_traj[1:] = (
-            distances_traj[:-1]
-            - distances_space[i - 1, 0:N-1]              # cols 0..N-2  (length N-1)
-            + distances_space[i - 1 + L, L:T]            # cols L..T-1  (length N-1)
-        )
-        distances_traj[0] = distances_traj0[i]  # uses symmetry: D_i(0) = D_0(i)
+    # --------------------------------
+    # Recurrence computed in batches
+    # --------------------------------
+    for i0 in range(1, N, q_batch):
+        i1 = min(i0 + q_batch, N)
+        B = i1 - i0
 
-        sorted_distances, _ = torch.topk(distances_traj, k=k+1, largest=False)
-        scores[i] = sorted_distances[1:k+1].mean()
-    end_time = time.time()
-    print(f"Trajectory distances and k-NN scoring took {end_time - start_time:.2f} seconds.")
+        # ---- outgoing block ----
+        rows_out = X[i0-1:i1-1]              # (B, D)
+        row_norms_out = norms[i0-1:i1-1]
+        cols_out = X[0:N-1]                  # (N-1, D)
+        col_norms_out = norms[0:N-1]
 
-    scores = scores.clamp(min=0.0)
-    scores = torch.sqrt(scores)
-    return scores, _
+        d_out = d_space_block(
+            rows_out, row_norms_out, cols_out, col_norms_out
+        )                                    # (B, N-1)
+
+        # ---- incoming block ----
+        rows_in = X[i0+L-1:i1+L-1]            # (B, D)
+        row_norms_in = norms[i0+L-1:i1+L-1]
+        cols_in = X[L:T]                     # (N-1, D)
+        col_norms_in = norms[L:T]
+
+        d_in = d_space_block(
+            rows_in, row_norms_in, cols_in, col_norms_in
+        )                                    # (B, N-1)
+
+        # ---- update trajectories ----
+        for b in range(B):
+            i = i0 + b
+            distances_traj[1:] = (
+                distances_traj[:-1]
+                - d_out[b]
+                + d_in[b]
+            )
+            distances_traj[0] = distances_traj0[i]
+            distances_traj = distances_traj.clamp(min=0.0)
+
+            # exclusion zone
+            lo = max(0, i - exclusion_zone + 1)
+            hi = min(N, i + exclusion_zone)
+            distances_traj[lo:hi] = float("inf")
+
+            sorted_distances, sorted_indices = torch.topk(
+                distances_traj, k=k * exclusion_zone, largest=False
+            )
+
+            current_mins = [sorted_indices[0].item()]
+            for idx in sorted_indices[1:]:
+                idx_item = idx.item()
+                if all(abs(idx_item - cm) >= exclusion_zone for cm in current_mins):
+                    current_mins.append(idx_item)
+                if len(current_mins) >= k:
+                    break
+
+            scores[i] = distances_traj[current_mins].mean().cpu()
+
+    return scores
 
 
-if __name__ == "__main__":
 
-    # for traj_length in range(1, 20, 1):
-    traj_length = 30
-    k = 30
-    parameter = "msl"
-    start_time = time.time()
-    scores, times = knn_scores(
-        "Data/era5_msl_daily_eu.nc", parameter, traj_length, k, q_batch=512, r_chunk=2048, device="cuda")
-    end_time = time.time()
+
+
+
+
+

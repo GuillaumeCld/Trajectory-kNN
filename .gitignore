@@ -3,3 +3,6 @@ Data/*.nc
 Data/*.mat
 result/**/*
 src/__pycache__/*
+
+*.csv
+*.png

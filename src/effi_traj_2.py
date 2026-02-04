@@ -1,13 +1,13 @@
 import torch
 import xarray as xr
 import numpy as np
-import plotly.express as px
 from tqdm import tqdm
 import pandas as pd
 import time
 import os
+# from memory_profiler import profile
 
-
+import matplotlib.pyplot as plt
 torch.backends.cudnn.benchmark = False
 torch.set_float32_matmul_precision('highest')
 
@@ -42,6 +42,11 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     # print(f"Data loading took {end_time - start_time:.2f} seconds.")
     times = ds["time"].values
     ds.close()
+
+    return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone), times
+
+# @profile
+def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone):
 
     T, H, W = data.shape
     D = H * W  # vectorize spatial dimensions
@@ -123,9 +128,8 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
         # remove self-match at j=i +- L
         self_matchs = range(max(0, i - exclusion_zone + 1), min(N, i + exclusion_zone))
         distances_traj[self_matchs] = float("inf")
-
-
         sorted_distances, sorted_indices = torch.topk(distances_traj, k=k*exclusion_zone, largest=False)
+
         current_mins = [sorted_indices[0].item()]
         for idx in sorted_indices[1:]:
             idx_item = idx.item()
@@ -141,7 +145,7 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
 
     # scores = scores.clamp(min=0.0)
     # scores = torch.sqrt(scores)
-    return scores.to("cpu"), times
+    return scores.to("cpu")
 
 
 def similarity_compute(nc_path_hist, nc_path_query, var, r_chunk=4096, device=None, dtype=torch.float32):
@@ -200,38 +204,195 @@ def similarity_compute(nc_path_hist, nc_path_query, var, r_chunk=4096, device=No
         distances_traj += distances   [t_offset, t_offset:t_offset + N]
 
 
-if __name__ == "__main__":
+def time_method(
+    T,
+    H,
+    W,
+    traj_length,
+    q_batch,
+    r_chunk,
+    k,
+    runs=3,
+):
+    times = []
 
-    etimes = []
-# for traj_length in range(1, 30, 1):
-    traj_length = 5
-    ks = [i if i != 0 else 1 for i in range(0, 101, 5)]
+    for _ in range(runs):
+        data = np.random.rand(T, H, W).astype(np.float32)
 
-    # for k in ks:
+        start = time.time()
+        _ = compute_distances_and_scores(
+            data,
+            traj_length,
+            k,
+            q_batch,
+            r_chunk,
+            device="cuda",
+            dtype=torch.float32,
+            exclusion_zone=traj_length,
+        )
+        times.append(time.time() - start)
+
+        del data
+        torch.cuda.empty_cache()
+
+    return np.mean(times), np.std(times)
+
+
+def experiment_data_size():
+    H, W = 180, 280
+    traj_length = 4
+    q_batch = 1024
+    r_chunk = 1024
     k = 10
-    parameter = "msl"
+
+    T_values = [365*10, 365*25, 365*50, 365*75]
+    means, stds = [], []
+
+    for T in T_values:
+        mean_t, std_t = time_method(
+            T, H, W, traj_length, q_batch, r_chunk, k
+        )
+        means.append(mean_t)
+        stds.append(std_t)
+
+    return T_values, means, stds
+
+def plot_results(x, y, yerr, xlabel):
+    plt.figure(figsize=(6, 4))
+    plt.errorbar(
+        x, y, yerr=yerr,
+        marker="o",
+        linewidth=2,
+        capsize=4
+    )
+    plt.yscale("log")
+    plt.xlabel(xlabel)
+    plt.ylabel("Computation Time (seconds)")
+    plt.grid(True, which="both", linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
+def experiment_traj_length():
+    T = 365 * 75
+    H, W = 180, 280
+    q_batch = 1024
+    r_chunk = 1024
+    k = 10
+
+    traj_lengths = [1, 2, 4, 8, 16]
+    means, stds = [], []
+
+    for L in traj_lengths:
+        mean_t, std_t = time_method(
+            T, H, W, L, q_batch, r_chunk, k
+        )
+        means.append(mean_t)
+        stds.append(std_t)
+
+    return traj_lengths, means, stds
+
+def computation_time():
+    # create synthetic data
+    # -----------------------------
+    # create synthetic data
+    # -----------------------------
+    T = 365 * 75    
+    H = 180
+    W = 280
+
+    traj_length = 1
+    q_batch = 1024
+    r_chunk = 1024
+    k = 10
+
+    data = np.random.rand(T, H, W).astype(np.float32)
+
+    # -----------------------------
+    # Your method timing
+    # -----------------------------
     start_time = time.time()
-    scores, times = knn_scores(
-        "Data/era5_msl_daily_eu.nc", parameter, traj_length, k, q_batch=1024*3, r_chunk=1024*3 , device="cuda")
+
+    _ = compute_distances_and_scores(
+        data,
+        traj_length,
+        k,
+        q_batch,
+        r_chunk,
+        device="cuda",
+        dtype=torch.float32,
+        exclusion_zone=traj_length
+    )
+
     end_time = time.time()
     elapsed = end_time - start_time
-    etimes.append(elapsed)
+    print(f"Your method took {elapsed:.2f} seconds.")
 
-    out_dir = "result/traj/"
-    out_path = os.path.join(
-        out_dir, f"{parameter}_trajlen{traj_length}_k{k}_exclusion.npz")
-    np.savez(out_path, scores=scores, times=np.array(times))
+    import faiss
+    mat_trajectories = []
+    print("Building matrix")
+    for i in range(T - traj_length + 1):
+        traj = data[i:i+traj_length].reshape(-1)
+        mat_trajectories.append(traj)
+    mat_trajectories = np.array(mat_trajectories).astype(np.float32)
+    del data
+    print("Building FAISS index")
 
-    print(f"traj_length={traj_length}, k={k}, time={elapsed:.2f} seconds.")
-    print(f"Minimum score: {scores.min().item():.4f}")
+    index = faiss.IndexFlatL2(H * W * traj_length)
+    index.add(mat_trajectories)
+    print(f"FAISS index has {index.ntotal} vectors.")
 
-    np.savetxt("effi_traj_2_times_gpu.txt", np.array(etimes))
+    start_time = time.time()
+    D, I = index.search(mat_trajectories, k=k*traj_length)
+    end_time = time.time()
+    elapsed = end_time - start_time
+    print(f"FAISS k-NN search took {elapsed:.2f} seconds.")
 
-    top_100_dates = np.argsort(scores.numpy())[:100]
-    top_100_times = times[top_100_dates]
-    df = pd.DataFrame({"time": top_100_times, "score": scores.numpy()[top_100_dates]})
-    df.to_csv(f"effi_traj_2_top100_trajlen{traj_length}_k{k}_exclusion.csv", index=False)   
-    print("Finished all computations.")
+
+
+if __name__ == "__main__":  
+    # computation_time()
+    # Trajectory length experiment
+    x, y, yerr = experiment_traj_length()
+    plot_results(x, y, yerr, xlabel="Trajectory length")
+
+    # Data size experiment
+    x, y, yerr = experiment_data_size()
+    plot_results(x, y, yerr, xlabel="Number of time steps (T)")
+
+
+#     etimes = []
+# # for traj_length in range(1, 30, 1):
+#     traj_length = 5
+#     ks = [i if i != 0 else 1 for i in range(0, 101, 5)]
+
+#     # for k in ks:
+#     k = 10
+#     parameter = "msl"
+#     start_time = time.time()
+#     scores, times = knn_scores(
+#         "Data/era5_msl_daily_eu.nc", parameter, traj_length, k, q_batch=1024*3, r_chunk=1024*3 , device="cuda")
+#     end_time = time.time()
+#     elapsed = end_time - start_time
+#     etimes.append(elapsed)
+
+#     out_dir = "result/traj/"
+#     out_path = os.path.join(
+#         out_dir, f"{parameter}_trajlen{traj_length}_k{k}_exclusion.npz")
+#     np.savez(out_path, scores=scores, times=np.array(times))
+
+#     print(f"traj_length={traj_length}, k={k}, time={elapsed:.2f} seconds.")
+#     print(f"Minimum score: {scores.min().item():.4f}")
+
+#     np.savetxt("effi_traj_2_times_gpu.txt", np.array(etimes))
+
+#     top_100_dates = np.argsort(scores.numpy())[:100]
+#     top_100_times = times[top_100_dates]
+#     df = pd.DataFrame({"time": top_100_times, "score": scores.numpy()[top_100_dates]})
+#     df.to_csv(f"effi_traj_2_top100_trajlen{traj_length}_k{k}_exclusion.csv", index=False)   
+#     print("Finished all computations.")
 
 
     
+
+

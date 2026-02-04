@@ -1,4 +1,4 @@
-name: spatiotemporal_anomalies_gpu
+name: faiss_gpu_env
 channels:
   - pytorch
   - conda-forge
@@ -7,17 +7,14 @@ dependencies:
   - python=3.11
   - numpy
   - pandas
+  - faiss-gpu
   - xarray
   - netcdf4
   - cftime
-  - pytorch
-  - torchvision
-  - torchaudio
   - matplotlib
   - tqdm
-  - pip
-  # - pip:
-  #   - scann
-  #   - tensorflow
+
+
+
   # - kaleido
   # - plotly
