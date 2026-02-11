@@ -13,8 +13,3 @@ dependencies:
   - cftime
   - matplotlib
   - tqdm
-
-
-
-  # - kaleido
-  # - plotly

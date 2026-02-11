@@ -1,5 +1,5 @@
 """
-FAISS-CPU feasibility experiment
+FAISS-GPU feasibility experiment
 ECML PKDD – Applied Data Science
 """
 
@@ -7,18 +7,20 @@ import os
 import time
 import csv
 import numpy as np
-import faiss
+from rarity_scoring_base import compute_distances_and_scores
+import torch 
 
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75]
-TRAJ_LENGTHS = [1]
+T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75, 365 * 100]
+TRAJ_LENGTHS = [1, 2, 4, 8, 16]
 
 H, W = 180, 280
 K = 10  # number of nearest neighbors
+DEVICE = "cpu"
 
-RESULTS_FILE = "faiss_results_cpu.csv"
+RESULTS_FILE = f"experiments/results/algo_{DEVICE}.csv"
 
 # ---------------------------------------------------------
 # Utilities
@@ -66,24 +68,25 @@ def build_matrix(data, traj_length):
 
 
 # ---------------------------------------------------------
-# Single run (may get killed)
+# Single run on GPU
 # ---------------------------------------------------------
-def run_faiss(T, traj_length):
+def run_algo(T, traj_length ):
     data = np.random.rand(T, H, W).astype(np.float32)
     start = time.time()
-
-    mat = build_matrix(data, traj_length)
-    dim = mat.shape[1]
-
-    # Build FAISS index
-    index = faiss.IndexFlatIP(dim)  # Inner product similarity
-    index.add(mat)
-
-    # Search all vectors against themselves
-    D, I = index.search(mat, K)
+    _ = compute_distances_and_scores(
+        data,
+        traj_length,
+        K,
+        1024,
+        1024,
+        device=DEVICE,
+        dtype=torch.float32,
+        exclusion_zone=traj_length,
+    )
+    
     elapsed = time.time() - start
 
-    return elapsed, mat.shape[0], dim
+    return elapsed, 0 , 0
 
 
 # ---------------------------------------------------------
@@ -101,7 +104,7 @@ if __name__ == "__main__":
             print(f"[RUN]  T={T}, L={L}")
 
             try:
-                t, n, d = run_faiss(T, L)
+                t, n, d = run_algo(T, L)
                 save_result(
                     {
                         "T": T,

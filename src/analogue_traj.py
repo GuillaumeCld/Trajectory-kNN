@@ -6,7 +6,7 @@ from tqdm import tqdm
 import pandas as pd
 import time
 import os
-from src.effi_traj_2 import knn_scores 
+from rarity_scoring_with_exlcusion import knn_scores 
 
 torch.backends.cudnn.benchmark = False
 torch.set_float32_matmul_precision('highest')
@@ -95,7 +95,7 @@ def similarity_compute(nc_path_hist, nc_path_query, var, r_chunk=4096, device=No
         dists = row_norms[:, None] + col_norms[None, :] - 2.0 * (rows @ cols.T)
     
 
-        distances[:, column_start:column_end] = dists
+    distances[:, column_start:column_end] = dists
     distances = distances.clamp(min=0.0)
     for i in range(T_query):
         for j in range(T_hist):

@@ -1,5 +1,5 @@
 """
-ScaNN feasibility experiment
+FAISS-GPU feasibility experiment
 ECML PKDD – Applied Data Science
 """
 
@@ -7,22 +7,18 @@ import os
 import time
 import csv
 import numpy as np
-import scann
-import tensorflow as tf
+import faiss  # Make sure you have faiss-gpu installed
+
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
 T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75]
-TRAJ_LENGTHS = [1, 2, 4, 8, 16]
+TRAJ_LENGTHS = [1, 2]
 
 H, W = 180, 280
-K = 10
+K = 10  # number of nearest neighbors
 
-RESULTS_FILE = "scann_results_gpu.csv"
-
-# Fixed ScaNN configuration
-NUM_LEAVES = 64
-LEAVES_TO_SEARCH = 16
+RESULTS_FILE = "experiments/results/faiss_results_gpu.csv"
 
 # ---------------------------------------------------------
 # Utilities
@@ -47,7 +43,7 @@ def save_result(row):
                 "traj_length",
                 "num_vectors",
                 "dim",
-                "scann_time",
+                "faiss_time",
                 "status",
             ],
         )
@@ -70,28 +66,32 @@ def build_matrix(data, traj_length):
 
 
 # ---------------------------------------------------------
-# Single run (may get killed)
+# Single run on GPU
 # ---------------------------------------------------------
-def run_scann(T, traj_length):
+def run_faiss_gpu(T, traj_length, use_gpu=True):
     data = np.random.rand(T, H, W).astype(np.float32)
-    mat = build_matrix(data, traj_length)
-    
     start = time.time()
-    searcher = scann.scann_ops_pybind.builder(
-        mat, K, "dot_product"
-    ).tree(
-        num_leaves=NUM_LEAVES,
-        num_leaves_to_search=LEAVES_TO_SEARCH,
-    ).score_ah(
-        2, anisotropic_quantization_threshold=0.2
-    ).build()
 
-   
-    mat = tf.convert_to_tensor(mat)
-    _ = searcher.search_batched(mat)          
+    mat = build_matrix(data, traj_length)
+    dim = mat.shape[1]
+
+    # CPU index first
+    index_cpu = faiss.IndexFlatIP(dim)  # Inner product similarity
+
+    if use_gpu:
+        # Move to GPU
+        res = faiss.StandardGpuResources()  # Allocate GPU resources
+        index = faiss.index_cpu_to_gpu(res, 0, index_cpu)  # GPU 0
+    else:
+        index = index_cpu
+
+    index.add(mat)
+
+    # Search all vectors against themselves
+    D, I = index.search(mat, K)
     elapsed = time.time() - start
 
-    return elapsed, mat.shape[0], mat.shape[1]
+    return elapsed, mat.shape[0], dim
 
 
 # ---------------------------------------------------------
@@ -104,19 +104,19 @@ if __name__ == "__main__":
         for L in TRAJ_LENGTHS:
             if (T, L) in done:
                 print(f"[SKIP] T={T}, L={L}")
-                break
+                continue
 
             print(f"[RUN]  T={T}, L={L}")
 
             try:
-                t, n, d = run_scann(T, L)
+                t, n, d = run_faiss_gpu(T, L)
                 save_result(
                     {
                         "T": T,
                         "traj_length": L,
                         "num_vectors": n,
                         "dim": d,
-                        "scann_time": f"{t:.4f}",
+                        "faiss_time": f"{t:.4f}",
                         "status": "OK",
                     }
                 )
@@ -129,7 +129,7 @@ if __name__ == "__main__":
                         "traj_length": L,
                         "num_vectors": "",
                         "dim": "",
-                        "scann_time": "",
+                        "faiss_time": "",
                         "status": "FAILED",
                     }
                 )

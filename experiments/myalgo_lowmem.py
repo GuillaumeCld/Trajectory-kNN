@@ -20,7 +20,7 @@ H, W = 180, 280
 K = 10  # number of nearest neighbors
 DEVICE = "cpu"
 
-RESULTS_FILE = f"algo_low_mem_{DEVICE}.csv"
+RESULTS_FILE = f"experiments/results/algo_low_mem_{DEVICE}.csv"
 
 # ---------------------------------------------------------
 # Utilities

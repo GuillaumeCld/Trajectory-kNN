@@ -1,8 +1,11 @@
 *.egg-info
 Data/*.nc
 Data/*.mat
-result/**/*
+experiments/results/*
+case_studies/results/*
 src/__pycache__/*
 
 *.csv
 *.png
+
+Articolo_Analogues_traj
