@@ -1,4 +1,4 @@
-name: spatiotemporal_anomalies
+name: trajectory_knn
 channels:
   - pytorch
   - conda-forge
