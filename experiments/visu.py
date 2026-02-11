@@ -150,7 +150,8 @@ axes[1].set_title("T = 27375")
 
 # ---- Common legend ----
 handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper center", ncol=3)
+fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=3)
 
-plt.savefig("time_scaling.pdf", bbox_inches='tight')
+plt.savefig("experiments/figures/time_scaling.pdf", bbox_inches='tight')
+plt.savefig("experiments/figures/time_scaling.png", bbox_inches='tight', dpi=300)
 plt.show()

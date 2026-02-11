@@ -2,6 +2,8 @@
 
 A Python package for detecting anomalies in spatiotemporal data (e.g. from netCDF files) using k-nearest neighbors approaches on trajectory embeddings. Implemented in PyTorch for efficient CPU and GPU parallel computation.
 
+![Trajectory kNN Overview](Figures/chaos.jpg)
+
 ## Overview
 
 This repository provides efficient algorithms to identify rare or anomalous spatiotemporal patterns in multidimensional time series data. The method works by:
@@ -33,10 +35,10 @@ Create the conda environment with the required dependencies:
 ```bash
 conda env create -f environment.yml
 
+
 # Optional (baseline only)
 # For FAISS CPU support
 conda env create -f env_faiss_cpu.yml
-
 # For FAISS GPU support
 conda env create -f env_faiss_gpu.yml
 ```
@@ -78,7 +80,7 @@ scores = knn_scores(
 The `case_studies/` directory contains real-world applications:
 
 ```bash
-# Run the MSL (Mean Sea Level) anomaly detection example
+# Run the sea level pressure anomaly detection example
 python case_studies/msl.py
 ```
 
