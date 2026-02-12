@@ -33,14 +33,11 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     spatial_dims = [d for d in da.dims if d != "time"]
     # (T, H, W) !!! load all data into memory !!!
     data = da.transpose("time", *spatial_dims).values.astype(np.float32)
-    c = data.mean()
-    data -= c  # remove mean
-
-
-    times = ds["time"].values
+    # c = data.mean()
+    # data -= c  # remove mean
     ds.close()
 
-    return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone), times
+    return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
 
 # @profile
 def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone):
@@ -56,7 +53,11 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
     # Move full dataset to device once so all computation stays on device
     X = torch.from_numpy(data).to(dtype).reshape(
         T, D).to(dev)  # (T, D) on device
-    # print(f"Data transfer to {dev} took {end_time - start_time:.2f} seconds.")
+    valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
+    print(valid_mask)
+    X = X[:, valid_mask]                    # keep valid columns
+    D = valid_mask.sum().item()
+    print(f"Number of valid spatial dimensions: {D}")
 
     # Precompute norms on device
     norms = blocked_norm_compute(X, r_chunk, dev)

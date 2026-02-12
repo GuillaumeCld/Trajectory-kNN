@@ -1,6 +1,7 @@
 import torch
 import xarray as xr
 import numpy as np
+import h5py
 
 # from memory_profiler import profile
 
@@ -31,18 +32,25 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     spatial_dims = [d for d in da.dims if d != "time"]
     # (T, H, W) !!! load all data into memory !!!
     data = da.transpose("time", *spatial_dims).values.astype(np.float32)
-    c = data.mean()
-    data -= c  # remove mean
+    # c = np.nanmean(data)
+    # data -= c  # remove mean
+    lat = ds["lat"].values if "lat" in ds else ds["latitude"].values
+    nlat = len(lat)
+    nlon = len(ds["lon"]) if "lon" in ds else len(ds["longitude"])
+    wlat = np.cos(np.deg2rad(lat))
+    W = np.tile(wlat, (nlon, 1)).T.flatten()
+    Ws = np.sqrt(W).reshape(nlat, nlon)
 
     ds.close()
 
-    return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
+    return compute_distances_and_scores(data * Ws, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
 
 # @profile
 def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone):
 
     T, H, W = data.shape
     D = H * W  # vectorize spatial dimensions
+    print(f"Data shape: (T={T}, H={H}, W={W}), vectorized to D={D} spatial dimensions.")
 
     # Choose device for compute if not specified
     if device is None:
@@ -50,9 +58,15 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
     dev = torch.device(device)
 
     # Move full dataset to device once so all computation stays on device
-    X = torch.from_numpy(data).to(dtype).reshape(
-        T, D).to(dev)  # (T, D) on device
-    # print(f"Data transfer to {dev} took {end_time - start_time:.2f} seconds.")
+    X = torch.from_numpy(data).to(dtype).reshape(T, D).to(dev)  # (T, D) on device
+
+    # remove spatial dims (columns) with any NaN values across time
+    # valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
+    # valid_mask = valid_mask & (X != 0).any(dim=0)  # also remove columns that are all zeros
+    # print(valid_mask)
+    # X = X[:, valid_mask]                    # keep valid columns
+    # D = valid_mask.sum().item()
+    # print(f"Number of valid spatial dimensions: {D}")
 
     # Precompute norms on device
     norms = blocked_norm_compute(X, r_chunk, dev)
