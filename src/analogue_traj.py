@@ -6,7 +6,7 @@ from tqdm import tqdm
 import pandas as pd
 import time
 import os
-from rarity_scoring_with_exlcusion import knn_scores 
+from rarity_scoring_exclusion import knn_scores 
 
 torch.backends.cudnn.benchmark = False
 torch.set_float32_matmul_precision('highest')

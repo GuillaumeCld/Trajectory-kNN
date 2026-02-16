@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import torch
-from src.rarity_scoring_base import knn_scores
+from src.rarity_scoring_interval import knn_scores
 from src.distance_matrix import build_matrix
 
 # =========================
@@ -22,7 +22,7 @@ print(
     f"Computing knn scores for {parameter} with trajectory length {traj_length} and k={k}...")
 start_time = time.time()
 scores = knn_scores(
-    file_path, parameter, traj_length, k, q_batch=1024*3, r_chunk=1024*3, device="cuda", exclusion_zone=traj_length)
+    file_path, parameter, traj_length, k, q_batch=1024*3, r_chunk=1024*3, device="cpu", exclusion_zone=traj_length)
 
 end_time = time.time()
 print(f"Total time taken: {end_time - start_time:.2f} seconds.")
@@ -55,7 +55,7 @@ top_100_times = times[top_100_dates]
 df = pd.DataFrame(
     {"time": top_100_times, "score": scores.numpy()[top_100_dates]})
 df["time"] = pd.to_datetime(df["time"])
-df.to_csv(f"{out_path}_top100.csv", index=False)
+df.to_csv(f"{out_path}_top100_interval.csv", index=False)
 
 # build_matrix(file_path, parameter, traj_length, k, q_batch=1024*3, r_chunk=1024*3, device="cuda",
 #              exclusion_zone=traj_length, h5_path=f"{out_path}_distances.h5", dtype=torch.float32)
@@ -88,4 +88,4 @@ print(relative_scores)
 
 # save top 100 relative anomaly scores
 top_100_relative = df.sort_values("relative_score", ascending=False).head(100)
-top_100_relative.to_csv(f"{out_path}_top100_relative.csv", index=False)
+top_100_relative.to_csv(f"{out_path}_top100_relative_interval.csv", index=False)

@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 
 # from src.knn_traj import knn_scores
-from rarity_scoring_with_exlcusion import knn_scores 
+from rarity_scoring_exclusion import knn_scores 
 
 def double_precision_scoring(nc_path, var, k, traj_length):
     ds = xr.open_dataset(nc_path)

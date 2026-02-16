@@ -28,6 +28,12 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
 
     # Load dataset
     ds = xr.open_dataset(nc_path)
+    ds = ds.sel(time=slice("1979-01-01", "2013-12-31"))
+    ds = ds.sel(
+        lon=slice(-15, 25),
+        lat=slice(70, 35)
+    )
+
     da = ds[var]
 
     spatial_dims = [d for d in da.dims if d != "time"]
@@ -53,10 +59,10 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
     # Move full dataset to device once so all computation stays on device
     X = torch.from_numpy(data).to(dtype).reshape(
         T, D).to(dev)  # (T, D) on device
-    valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
-    print(valid_mask)
-    X = X[:, valid_mask]                    # keep valid columns
-    D = valid_mask.sum().item()
+    # valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
+    # print(valid_mask)
+    # X = X[:, valid_mask]                    # keep valid columns
+    # D = valid_mask.sum().item()
     print(f"Number of valid spatial dimensions: {D}")
 
     # Precompute norms on device
@@ -116,7 +122,7 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
         # remove self-match at j=i +- L
         self_matchs = range(max(0, i - exclusion_zone + 1), min(N, i + exclusion_zone))
         distances_traj[self_matchs] = float("inf")
-        sorted_distances, sorted_indices = torch.topk(distances_traj, k=k*exclusion_zone, largest=False)
+        sorted_distances, sorted_indices = torch.topk(distances_traj, k=k*exclusion_zone, largest=False, sorted=True)
 
         current_mins = [sorted_indices[0].item()]
         for idx in sorted_indices[1:]:

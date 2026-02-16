@@ -25,27 +25,21 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     if exclusion_zone == -1:
         exclusion_zone = traj_length
 
-    # --- Load dataset ---
+    # Load dataset
     ds = xr.open_dataset(nc_path)
 
-    # (T, H, W) !!! load all data into memory !!!
-
-    # --- Handle longitude convention (0–360 → -180–180) ---
-    if ds.lon.max() > 180:
-        ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180))
-        ds = ds.sortby("lon")
-
-    # --- Restrict to 15W to 25E, 35N to 70N ---
+    ds = ds.sel(time=slice("1979-01-01", "2023-12-31"))
     ds = ds.sel(
         lon=slice(-15, 25),
         lat=slice(70, 35)
     )
+    da = ds[var]
 
-    # --- Restrict to 1979 to 2023 ---
-    ds = ds.sel(time=slice("1979-01-01", "2013-12-31"))
-
-    # --- Load into memory as (T, H, W) float32 ---
-
+    spatial_dims = [d for d in da.dims if d != "time"]
+    # (T, H, W) !!! load all data into memory !!!
+    data = da.transpose("time", *spatial_dims).values.astype(np.float32)
+    # c = np.nanmean(data)
+    # data -= c  # remove mean
     lat = ds["lat"].values if "lat" in ds else ds["latitude"].values
     nlat = len(lat)
     nlon = len(ds["lon"]) if "lon" in ds else len(ds["longitude"])
@@ -53,13 +47,9 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     W = np.tile(wlat, (nlon, 1)).T.flatten()
     Ws = np.sqrt(W).reshape(nlat, nlon)
 
-    spatial_dims = [d for d in ds.dims if d != "time"]
-    spatial_dims = ['lat', 'lon']
-    data = ds[var].transpose("time", *spatial_dims).values.astype(np.float32)
-    data *= Ws  # apply latitude weighting
-    # --- Close dataset ---
     ds.close()
-    return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
+
+    return compute_distances_and_scores(data , traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
 
 # @profile
 def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone):
@@ -76,12 +66,12 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
     # Move full dataset to device once so all computation stays on device
     X = torch.from_numpy(data).to(dtype).reshape(T, D).to(dev)  # (T, D) on device
 
-    # # remove spatial dims (columns) with any NaN values across time
-    # valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
-    # # valid_mask = valid_mask & (X != 0).any(dim=0)  # also remove columns that are all zeros
-    # print(valid_mask)
-    # X = X[:, valid_mask]                    # keep valid columns
-    # D = valid_mask.sum().item()
+    # remove spatial dims (columns) with any NaN values across time
+    valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
+    # valid_mask = valid_mask & (X != 0).any(dim=0)  # also remove columns that are all zeros
+    print(valid_mask)
+    X = X[:, valid_mask]                    # keep valid columns
+    D = valid_mask.sum().item()
     # print(f"Number of valid spatial dimensions: {D}")
 
     # Precompute norms on device
@@ -139,11 +129,37 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
         distances_traj[0] = distances_traj0[i]  # uses symmetry: D_i(0) = D_0(i)
         distances_traj = distances_traj.clamp(min=0.0)
         # remove self-match at j=i +- L
-        self_matchs = range(max(0, i - exclusion_zone + 1), min(N, i + exclusion_zone))
-        distances_traj[self_matchs] = float("inf")
 
-        sorted_distances, _ = torch.topk(distances_traj, k=k, largest=False)
+        YEAR_LENGTH = 365
+        position_in_year = i % YEAR_LENGTH
+        interval_range = 15
 
+
+        # excludes matches not within the same time of the year +- interval_range days, with wrap-around at year boundaries
+        mask = torch.zeros(N, dtype=torch.bool)
+
+
+        position_in_year = i % YEAR_LENGTH
+        days = torch.arange(N, device=distances_traj.device) % YEAR_LENGTH
+
+        day_diff = torch.abs(days - position_in_year)
+        day_diff = torch.minimum(day_diff, YEAR_LENGTH - day_diff)
+
+        mask = day_diff > interval_range
+
+        start = max(0, i - exclusion_zone + 1)
+        end = min(N, i + exclusion_zone)
+        mask[start:end] = True
+
+        distances_masked = distances_traj.clone()
+        distances_masked[mask] = float("inf")
+
+        sorted_distances, indices = torch.topk(
+            distances_masked,
+            k=min(k, torch.isfinite(distances_masked).sum().item()),
+            largest=False,
+            sorted=True
+)
 
 
         scores[i] = sorted_distances.mean()

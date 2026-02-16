@@ -37,7 +37,9 @@ dates_extr = pd.read_csv(file)["time"].values.astype("datetime64[ns]")
 dates_extr = pd.to_datetime(dates_extr).normalize()
 dates_extr_format = dates_extr.year * 10000 + dates_extr.month * 100 + dates_extr.day
 
-
+# save all storms dates to csv
+df_storms = pd.DataFrame({"Date": pd.to_datetime(StormDatabase1.astype(str), format='%Y%m%d')})
+df_storms.to_csv("storms.csv", index=False)
 
 detected_dates = np.intersect1d(StormDatabase1, dates_extr_format)
 N_Storm_detected.append(len(detected_dates))
