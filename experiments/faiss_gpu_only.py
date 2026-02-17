@@ -12,13 +12,13 @@ import faiss  # Make sure you have faiss-gpu installed
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75]
-TRAJ_LENGTHS = [1, 2]
+T_VALUES = [365 * 75]
+TRAJ_LENGTHS = [1]
 
-H, W = 180, 280
+H, W = 250, 250
 K = 10  # number of nearest neighbors
 
-RESULTS_FILE = "experiments/results/faiss_results_gpu.csv"
+RESULTS_FILE = f"experiments/results/faiss_results_gpu_{H}.csv"
 
 # ---------------------------------------------------------
 # Utilities

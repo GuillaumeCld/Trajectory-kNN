@@ -106,9 +106,12 @@ def main():
         ds = ds.sel(lon=slice(lon_min, lon_max))
     if lat_min and lat_max:
         ds = ds.sel(lat=slice(lat_max, lat_min))
+    spatial_dims = ["lat", "lon"]  if "lat" in ds.dims else ["latitude", "longitude"]
 
     da = ds[parameter]
-    spatial_dims = [d for d in da.dims if d != "time"]
+    da = da.squeeze(drop=True)
+    # spatial_dims = [d for d in da.dims if d != "time"]
+
     data = da.transpose("time", *spatial_dims).values.astype(np.float32)
     times = da["time"].values
     ds.close()
@@ -124,7 +127,11 @@ def main():
     if args.pixelwise_standardization:
         data = pp.pixelwise_standardize(data)
 
-    print(f"Data shape after preprocessing: {data.shape}")
+
+
+
+
+    
     # =========================
     # Compute scores
     # =========================

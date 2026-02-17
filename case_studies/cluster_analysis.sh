@@ -12,7 +12,7 @@ FILE_PATH="Data/era5_msl_daily_eu.nc"
 DEVICE="cuda"
 ALGORITHM="base"
 OUT_PATH="case_studies/results/${PARAMETER}/cluster_analysis_trajlen${TRAJ_LENGTH}_k${K}/"
-mkdir -p "$OUT_PATH"    
+mkdir -p "$OUT_PATH"
 
 SCALING_FACTOR=100.0
 SCALING_CONSTANT=0.0
@@ -20,9 +20,9 @@ SCALING_CONSTANT=0.0
 # Preprocessing toggles (true / false)
 REMOVE_LEAP=true
 REMOVE_SEASONAL_CYCLE=true
-COS_LAT_WEIGHTING=false
+COS_LAT_WEIGHTING=true
 PIXELWISE_STANDARDIZATION=true
-USE_PCA=false
+USE_PCA=ftrue
 
 
 # ==========================================

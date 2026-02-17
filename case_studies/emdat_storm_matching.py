@@ -23,7 +23,7 @@ def parse_args():
                         help="CSV file containing top ranked dates")
 
     parser.add_argument("--emdat_file", type=str,
-                        default="Data/Extremes/emdat_Extreme_temperature.csv",
+                        default="Data/Extremes/emdat_Storm.csv",
                         help="EMDAT extreme temperature events CSV file")
 
     parser.add_argument("--top_n", type=int, default=100,

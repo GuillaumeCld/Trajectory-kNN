@@ -12,13 +12,13 @@ import faiss
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75] # time dim
+T_VALUES = [365 * 75] # time dim
 TRAJ_LENGTHS = [1]
 
-H, W = 180, 280 # spatial dims
+H, W = 250, 250 # spatial dims
 K = 10  # number of nearest neighbors
 
-RESULTS_FILE = "experiments/results/faiss_results_cpu.csv"
+RESULTS_FILE = f"experiments/results/faiss_results_cpu_{H}.csv"
 
 # ---------------------------------------------------------
 # Utilities

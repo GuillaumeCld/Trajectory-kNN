@@ -20,6 +20,6 @@ python case_studies/score.py \
 
 
 
-python case_studies/emdat_temperature_matching.py \
+python case_studies/emdat_storm_matching.py \
     --comparison_file "case_studies/results/$PARAMETER/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100_relative.csv" \
     --top_n 100

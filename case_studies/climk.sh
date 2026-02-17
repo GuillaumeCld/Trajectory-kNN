@@ -1,62 +1,43 @@
 #!/bin/bash
 
-# ==========================================
 # Common parameters
-# ==========================================
-
-TRAJ_LENGTH=7
+TRAJ_LENGTH=1
 K=10
-PARAMETER="t2m"
+PARAMETER="msl"
+FILE_PATH="Data/era5_msl_daily_eu.nc"
+# FILE_PATH="Data/z500_anom_daily_eu.nc"
+DEVICE="cuda"
+ALGORITHM="base"
+LON_MIN=-22
+LON_MAX=45
+LAT_MIN=27
+LAT_MAX=72
+START_YEAR=1995
+END_YEAR=2015
 
-FILE_PATH="Data/t2m_daily_avg_1950_2023.nc"
-DATE_PATH="case_studies/results/${PARAMETER}/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100_relative_interval.csv"
+# Script 1: Score
+python case_studies/score.py \
+    --traj_length "$TRAJ_LENGTH" \
+    --k "$K" \
+    --parameter "$PARAMETER" \
+    --file_path "$FILE_PATH" \
+    --device "$DEVICE" \
+    --algorithm "$ALGORITHM" \
+    --lon_min "$LON_MIN" \
+    --lon_max "$LON_MAX" \
+    --lat_min "$LAT_MIN" \
+    --lat_max "$LAT_MAX" \
+    --start_year "$START_YEAR" \
+    --end_year "$END_YEAR" \
 
-OUT_PATH="case_studies/results/${PARAMETER}/"
+# Script 2: Storm matching
+python case_studies/storm_matching.py \
+    --comparison_file "case_studies/results/$PARAMETER/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100.csv" \
+    --traj_length "$TRAJ_LENGTH" \
+    --top_n 100 \
+    --use_climk
 
-SCALING_FACTOR=1.0
-SCALING_CONSTANT=273.15
-
-# Preprocessing toggles (true / false)
-REMOVE_LEAP=true
-REMOVE_SEASONAL_CYCLE=true
-COS_LAT_WEIGHTING=true
-PIXELWISE_STANDARDIZATION=true
-USE_PCA=true
-
-
-# ==========================================
-# Build optional flags
-# ==========================================
-
-FLAGS=""
-
-if [ "$REMOVE_LEAP" = false ]; then
-    FLAGS="$FLAGS --no_remove_leap"
-fi
-
-if [ "$REMOVE_SEASONAL_CYCLE" = false ]; then
-    FLAGS="$FLAGS --no_remove_seasonal_cycle"
-fi
-
-if [ "$COS_LAT_WEIGHTING" = false ]; then
-    FLAGS="$FLAGS --no_cos_lat_weighting"
-fi
-
-if [ "$PIXELWISE_STANDARDIZATION" = false ]; then
-    FLAGS="$FLAGS --no_pixelwise_standardization"
-fi
-
-if [ "$USE_PCA" = false ]; then
-    FLAGS="$FLAGS --no_pca"
-fi
-
-
-python case_studies/cluster_analysis.py \
---file_path "$FILE_PATH" \
---date_path "$DATE_PATH" \
---parameter "$PARAMETER" \
---out_path "$OUT_PATH" \
---scaling_factor "$SCALING_FACTOR" \
---scaling_constant "$SCALING_CONSTANT" \
-$FLAGS
-
+# Script 3: EMDAT temperature matching
+python case_studies/emdat_temperature_matching.py \
+    --comparison_file "case_studies/results/$PARAMETER/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100.csv" \
+    --top_n 100

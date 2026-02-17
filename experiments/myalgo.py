@@ -1,5 +1,5 @@
 """
-FAISS-GPU feasibility experiment
+My algo running time experiment
 ECML PKDD – Applied Data Science
 """
 
@@ -7,20 +7,21 @@ import os
 import time
 import csv
 import numpy as np
-from rarity_scoring_base import compute_distances_and_scores
+from src.rarity_scoring_base import compute_distances_and_scores
 import torch 
 
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 10, 365 * 25, 365 * 50, 365 * 75, 365 * 100]
-TRAJ_LENGTHS = [1, 2, 4, 8, 16]
+T_VALUES = [365 * 75]
+TRAJ_LENGTHS = [1]
 
-H, W = 180, 280
+# 50 100 150 200 250
+H, W = 250, 250
 K = 10  # number of nearest neighbors
 DEVICE = "cpu"
 
-RESULTS_FILE = f"experiments/results/algo_{DEVICE}.csv"
+RESULTS_FILE = f"experiments/results/algo_{DEVICE}_{H}.csv"
 
 # ---------------------------------------------------------
 # Utilities

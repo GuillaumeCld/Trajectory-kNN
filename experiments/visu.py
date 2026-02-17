@@ -1,157 +1,213 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-
-all_files = [
-    "experiments/results/algo_cpu.csv",
-    "experiments/results/algo_cuda.csv",
-    "experiments/results/algo_low_mem_cpu.csv",
-    "experiments/results/algo_low_mem_cuda.csv",
-    "experiments/results/faiss_results_cpu.csv",
-    "experiments/results/faiss_results_gpu.csv",
-]
-
-# ---- LOAD ALL DATA ----
-dfs = []
-for file in all_files:
-    df = pd.read_csv(file)
-    df = df[df["status"] == "OK"].copy()
-    df["source"] = file.replace(".csv", "")
-    dfs.append(df)
-
-data = pd.concat(dfs, ignore_index=True)
-
-traj_lengths = sorted(data["traj_length"].unique())
-Ts = sorted(data["T"].unique())
+from pathlib import Path
 
 # ============================================================
-# FIGURE 1: one subplot per traj_length (x = T)
+# CONFIG
 # ============================================================
 
-fig1, axes1 = plt.subplots(
-    nrows=1,
-    ncols=len(traj_lengths),
-    figsize=(4 * len(traj_lengths), 4),
-    sharey=True
-)
+RESULTS_DIR = Path("experiments/results")
+FIGURES_DIR = Path("experiments/figures")
 
-if len(traj_lengths) == 1:
-    axes1 = [axes1]
+DIMENSIONS = [50, 100, 150, 200, 250]
 
-for ax, traj_length in zip(axes1, traj_lengths):
-    subset = data[data["traj_length"] == traj_length]
+FILES = {
+    "algo_cpu": "algo_cpu.csv",
+    "algo_gpu": "algo_cuda.csv",
+    "faiss_cpu": "faiss_results_cpu.csv",
+    "faiss_gpu": "faiss_results_gpu.csv",
+}
 
-    for source, group in subset.groupby("source"):
+# ============================================================
+# UTILS
+# ============================================================
+
+def load_csv(path):
+    return pd.read_csv(path)
+
+
+def load_dimension_times(dimensions):
+    """
+    Load timing results for different dimensions.
+    """
+    results = {
+        "algo_cpu": [],
+        "algo_gpu": [],
+        "faiss_cpu": [],
+        "faiss_gpu": [],
+    }
+
+    for H in dimensions:
+        results["algo_cpu"].append(
+            load_csv(RESULTS_DIR / f"algo_cpu_{H}.csv")["faiss_time"].iloc[0]
+        )
+        results["algo_gpu"].append(
+            load_csv(RESULTS_DIR / f"algo_cuda_{H}.csv")["faiss_time"].iloc[0]
+        )
+        results["faiss_cpu"].append(
+            load_csv(RESULTS_DIR / f"faiss_results_cpu_{H}.csv")["faiss_time"].iloc[0]
+        )
+        results["faiss_gpu"].append(
+            load_csv(RESULTS_DIR / f"faiss_results_gpu_{H}.csv")["faiss_time"].iloc[0]
+        )
+
+    return results
+
+
+def load_full_experiment_data():
+    """
+    Load and merge all experiment CSV files.
+    """
+    dfs = []
+    for source, filename in FILES.items():
+        df = load_csv(RESULTS_DIR / filename)
+        df = df[df["status"] == "OK"].copy()
+        df["source"] = source
+        dfs.append(df)
+
+    return pd.concat(dfs, ignore_index=True)
+
+
+# ============================================================
+# PLOTTING FUNCTIONS
+# ============================================================
+
+def plot_time_vs_dimension(dimensions, results):
+    plt.figure(figsize=(10, 6))
+
+    for label, times in results.items():
+        plt.plot(dimensions, times, marker="o", label=label)
+
+    plt.xlabel("Dimension (H=W)")
+    plt.ylabel("Time (seconds)")
+    plt.title("Time vs Dimension")
+    plt.legend()
+    plt.grid()
+
+    plt.savefig(RESULTS_DIR / "time_vs_dimension.png")
+    plt.show()
+
+
+def plot_by_group(data, group_key, x_key, title, xlabel, filename):
+    """
+    Generic grouped subplot plotting.
+    """
+    groups = sorted(data[group_key].unique())
+
+    fig, axes = plt.subplots(
+        1, len(groups),
+        figsize=(4 * len(groups), 4),
+        sharey=True
+    )
+
+    if len(groups) == 1:
+        axes = [axes]
+
+    for ax, value in zip(axes, groups):
+        subset = data[data[group_key] == value]
+
+        for source, group in subset.groupby("source"):
+            group = group.sort_values(x_key)
+            ax.plot(
+                group[x_key],
+                group["faiss_time"],
+                marker="o",
+                label=source
+            )
+
+        ax.set_title(f"{group_key} = {value}")
+        ax.set_xlabel(xlabel)
+        ax.grid(True)
+
+    axes[0].set_ylabel("FAISS Time (seconds)")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=3)
+    fig.suptitle(title)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    plt.savefig(filename)
+    plt.close()
+
+
+def plot_scaling_summary(data):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 3), sharey=True)
+
+    markers = ["o", "o", "s", "s", "^", "^"]
+    linestyles = ["-", "--", "-", "--", "-", "--"]
+
+    # ---- Subplot 1: traj_length == 4 ----
+    subset = data[data["traj_length"] == 4]
+    for i, (source, group) in enumerate(subset.groupby("source")):
         group = group.sort_values("T")
-        ax.plot(
+        axes[0].plot(
             group["T"],
             group["faiss_time"],
-            marker="o",
+            marker=markers[i],
+            linestyle=linestyles[i],
             label=source
         )
 
-    ax.set_title(f"traj_length = {traj_length}")
-    ax.set_xlabel("T")
-    ax.grid(True)
+    axes[0].set_xlabel("Number of timesteps")
+    axes[0].set_ylabel("Time (seconds)")
+    axes[0].set_title("Trajectory length = 4")
 
-axes1[0].set_ylabel("FAISS Time (seconds)")
-
-handles, labels = axes1[0].get_legend_handles_labels()
-fig1.legend(handles, labels, loc="upper center", ncol=3)
-fig1.suptitle("FAISS Time vs T (one subplot per trajectory length)")
-
-plt.tight_layout(rect=[0, 0, 1, 0.9])
-# plt.show()
-plt.close()
-# ============================================================
-# FIGURE 2: one subplot per T (x = traj_length)
-# ============================================================
-
-fig2, axes2 = plt.subplots(
-    nrows=1,
-    ncols=len(Ts),
-    figsize=(4 * len(Ts), 4),
-    sharey=True
-)
-
-if len(Ts) == 1:
-    axes2 = [axes2]
-
-for ax, T in zip(axes2, Ts):
-    subset = data[data["T"] == T]
-
-    for source, group in subset.groupby("source"):
+    # ---- Subplot 2: T == 27375 ----
+    subset = data[data["T"] == 27375]
+    for i, (source, group) in enumerate(subset.groupby("source")):
         group = group.sort_values("traj_length")
-        ax.plot(
+        axes[1].plot(
             group["traj_length"],
             group["faiss_time"],
-            marker="o",
+            marker=markers[i],
+            linestyle=linestyles[i],
             label=source
         )
 
-    ax.set_title(f"T = {T}")
-    ax.set_xlabel("Trajectory Length")
-    ax.grid(True)
+    axes[1].set_xlabel("Length of trajectories")
+    axes[1].set_title("T = 27375")
 
-axes2[0].set_ylabel("FAISS Time (seconds)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=3)
 
-handles, labels = axes2[0].get_legend_handles_labels()
-fig2.legend(handles, labels, loc="upper center", ncol=3)
-fig2.suptitle("FAISS Time vs Trajectory Length (one subplot per T)")
-
-plt.tight_layout(rect=[0, 0, 1, 0.9])
-
-# plt.show()
-plt.close()
+    plt.savefig(FIGURES_DIR / "time_scaling.pdf", bbox_inches="tight")
+    plt.savefig(FIGURES_DIR / "time_scaling.png", bbox_inches="tight", dpi=300)
+    plt.show()
 
 
+# ============================================================
+# MAIN
+# ============================================================
 
+def main():
 
-import matplotlib.pyplot as plt
+    # ---- Dimension scaling ----
+    dim_results = load_dimension_times(DIMENSIONS)
+    plot_time_vs_dimension(DIMENSIONS, dim_results)
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 3), sharey=True)
+    # ---- Full experiment plots ----
+    data = load_full_experiment_data()
 
-markers = ["o", "o", "s", "s", "^", "^"]
-ls = ["-", "--", "-", "--", "-", "--"]
-
-# ---- Subplot 1: faiss_time vs T (traj_length == 4) ----
-subset = data[data["traj_length"] == 4]
-i = 0
-for source, group in subset.groupby("source"):
-    group = group.sort_values("T")
-    axes[0].plot(
-        group["T"],
-        group["faiss_time"],
-        marker=markers[i],
-        linestyle=ls[i],
-        label=source
+    plot_by_group(
+        data=data,
+        group_key="traj_length",
+        x_key="T",
+        title="FAISS Time vs T (one subplot per trajectory length)",
+        xlabel="T",
+        filename=FIGURES_DIR / "time_vs_T.png"
     )
-    i += 1
 
-axes[0].set_xlabel("Number of timesteps")
-axes[0].set_ylabel("Time (seconds)")
-axes[0].set_title("Trajectory length = 4")
-
-# ---- Subplot 2: faiss_time vs traj_length (T == 27375) ----
-subset = data[data["T"] == 27375]
-i = 0
-for source, group in subset.groupby("source"):
-    group = group.sort_values("traj_length")
-    axes[1].plot(
-        group["traj_length"],
-        group["faiss_time"],
-        marker=markers[i],
-        linestyle=ls[i],
-        label=source
+    plot_by_group(
+        data=data,
+        group_key="T",
+        x_key="traj_length",
+        title="FAISS Time vs Trajectory Length (one subplot per T)",
+        xlabel="Trajectory Length",
+        filename=FIGURES_DIR / "time_vs_traj_length.png"
     )
-    i += 1
 
-axes[1].set_xlabel("Length of trajectories")
-axes[1].set_title("T = 27375")
+    plot_scaling_summary(data)
 
-# ---- Common legend ----
-handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=3)
 
-plt.savefig("experiments/figures/time_scaling.pdf", bbox_inches='tight')
-plt.savefig("experiments/figures/time_scaling.png", bbox_inches='tight', dpi=300)
-plt.show()
+if __name__ == "__main__":
+    main()

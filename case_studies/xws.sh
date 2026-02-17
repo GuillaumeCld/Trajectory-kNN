@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Common parameters
-TRAJ_LENGTH=7
+TRAJ_LENGTH=1
 K=10
-PARAMETER="msl"
-FILE_PATH="Data/era5_msl_daily_eu.nc"
+PARAMETER="z500"
+FILE_PATH="Data/era5_z500_daily_eu.nc"
 DEVICE="cuda"
 ALGORITHM="base"
 LON_MIN=-15
