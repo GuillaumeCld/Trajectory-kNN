@@ -62,7 +62,7 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
 
 # @profile
-def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone):
+def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone, use_pca=False):
 
     T, H, W = data.shape
     D = H * W  # vectorize spatial dimensions
@@ -73,12 +73,27 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
         device = "cuda" if torch.cuda.is_available() else "cpu"
     dev = torch.device(device)
 
+    X = torch.from_numpy(data.reshape(T, D)).to(dtype)
+    if use_pca:
+    # low rank svd on spatial dimensions 
+        u, s, v = torch.svd_lowrank(X, q=500, M=X.mean(dim=0, keepdim=True))
+        # keep 99% of variance
+        variance_explained = torch.cumsum(s**2, dim=0) / torch.sum(s**2)
+        q_99 = torch.searchsorted(variance_explained, 0.99).item() + 1
+        print(f"Keeping {q_99} singular values to retain 99% variance.")
+        u = u[:, :q_99]
+        s = s[:q_99]
+        v = v[:, :q_99]
+        print(f"Shapes of SVD components: u={u.shape}, s={s.shape}, v={v.shape}")
+        X = u * s
+
     # Move full dataset to device once so all computation stays on device
-    X = torch.from_numpy(data).to(dtype).reshape(T, D).to(dev)  # (T, D) on device
+    X = X.to(dev)
+    # print(f"Shape after low-rank approximation: {X.shape}, rank={q_99}")
 
     # # remove spatial dims (columns) with any NaN values across time
     # valid_mask = ~torch.isnan(X).any(dim=0)  # shape: (D,)
-    # # valid_mask = valid_mask & (X != 0).any(dim=0)  # also remove columns that are all zeros
+    # valid_mask = valid_mask & (X != 0).any(dim=0)  # also remove columns that are all zeros
     # print(valid_mask)
     # X = X[:, valid_mask]                    # keep valid columns
     # D = valid_mask.sum().item()
