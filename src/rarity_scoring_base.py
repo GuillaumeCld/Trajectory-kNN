@@ -31,18 +31,18 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     # (T, H, W) !!! load all data into memory !!!
 
     # --- Handle longitude convention (0–360 → -180–180) ---
-    if ds.lon.max() > 180:
-        ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180))
-        ds = ds.sortby("lon")
+    # if ds.lon.max() > 180:
+    #     ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180))
+    #     ds = ds.sortby("lon")
 
-    # --- Restrict to 15W to 25E, 35N to 70N ---
-    ds = ds.sel(
-        lon=slice(-15, 25),
-        lat=slice(70, 35)
-    )
+    # # --- Restrict to 15W to 25E, 35N to 70N ---
+    # ds = ds.sel(
+    #     lon=slice(-15, 25),
+    #     lat=slice(70, 35)
+    # )
 
-    # --- Restrict to 1979 to 2023 ---
-    ds = ds.sel(time=slice("1979-01-01", "2013-12-31"))
+    # # --- Restrict to 1979 to 2023 ---
+    # ds = ds.sel(time=slice("1979-01-01", "2013-12-31"))
 
     # --- Load into memory as (T, H, W) float32 ---
 
@@ -79,7 +79,7 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
         u, s, v = torch.svd_lowrank(X, q=500, M=X.mean(dim=0, keepdim=True))
         # keep 99% of variance
         variance_explained = torch.cumsum(s**2, dim=0) / torch.sum(s**2)
-        q_99 = torch.searchsorted(variance_explained, 0.99).item() + 1
+        q_99 = torch.searchsorted(variance_explained, 0.95).item() + 1
         print(f"Keeping {q_99} singular values to retain 99% variance.")
         u = u[:, :q_99]
         s = s[:q_99]
@@ -115,8 +115,9 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
 
         rows = X[row_start:row_end] 
         row_norms = norms[row_start:row_end]
-        # blocked inner loop on columns, loop over time
-        for column_start in range(0, T, r_chunk):
+        # blocked inner loop on columns, loop over time, 
+        # loop start from diagonal blocks to exploit symmetry and reduce compute by half
+        for column_start in range(row_start, T, r_chunk):
             column_end = min(column_start + r_chunk, T)
 
 
@@ -127,6 +128,8 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
             # distances_ij -> distance between space fields of time i and j
             distances = row_norms[:, None] + col_norms[None, :] - 2.0 * (rows @ cols.T)
             distances_space[row_start:row_end, column_start:column_end] = distances.to("cpu")
+            distances_space[column_start:column_end, row_start:row_end] = distances.T.to("cpu")  # exploit symmetry
+
     distances_space = distances_space.clamp(min=0.0)
 
     # compute trajectory distances 

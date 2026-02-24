@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 
 # from src.knn_traj import knn_scores
-from rarity_scoring_exclusion import knn_scores 
+from src.rarity_scoring_base import knn_scores 
 
 def double_precision_scoring(nc_path, var, k, traj_length):
     ds = xr.open_dataset(nc_path)
@@ -49,7 +49,7 @@ traj_length = 5
  
 scores_double, _ = double_precision_scoring(nc_path, var, k, traj_length)
 
-scores_single, _ = knn_scores(nc_path, var, traj_length, k=k, q_batch=10, r_chunk=10, device="cpu") #, exclusion_zone=1
+scores_single = knn_scores(nc_path, var, traj_length, k=k, q_batch=10, r_chunk=10, device="cpu") #, exclusion_zone=1
 
 print("Double ", scores_double[:10])
 print("Single ", scores_single[:10])
@@ -60,7 +60,7 @@ print(f"Max difference: {diff.max().item():.2e}")
 print(f"Mean difference: {diff.mean().item():.2e}")
 print(f"Std difference: {diff.std().item():.2e}")
 # Relative error
-relative_error = diff / torch.clamp_min(torch.abs(scsteores_double), 1e-6)
+relative_error = diff / torch.clamp_min(torch.abs(scores_double), 1e-6)
 print(f"Max relative error: {relative_error.max().item():.2e}") 
 print(f"Mean relative error: {relative_error.mean().item():.2e}")
 print(f"Std relative error: {relative_error.std().item():.2e}")
