@@ -31,7 +31,12 @@ from matplotlib.colors import TwoSlopeNorm
 
 import src.preprocessing as pp
 
-
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",  
+    "font.serif": ["Latin Modern Roman"],
+})
+# plt.rcParams['font.size'] = 16
 # =========================
 # Argument Parser
 # =========================
@@ -158,7 +163,7 @@ def main():
 
     avg_sil = np.zeros(Kmax + 1)
     all_idx = {}
-
+    inertias = np.zeros(Kmax + 1)
     for K in range(Kmin, Kmax + 1):
         kmeans = KMeans(n_clusters=K, n_init=50, max_iter=1000,
                         random_state=0, init="k-means++")
@@ -167,10 +172,17 @@ def main():
         all_idx[K] = idxK
         sil = silhouette_samples(abnormal_fields, idxK)
         avg_sil[K] = sil.mean()
-
+        inertias[K] = kmeans.inertia_
     bestK = np.argmax(avg_sil[Kmin:Kmax + 1]) + Kmin
     cl = all_idx[bestK]
-
+    plt.plot(range(Kmin, Kmax + 1), inertias[Kmin:Kmax + 1], "-o", linewidth=2.5, markersize=8, color='#2c3e50', label='Inertia')
+    plt.xlabel("Number of Clusters (K)", fontsize=12)
+    plt.ylabel("Inertia", fontsize=12)
+    plt.title("K-Means Inertia for Different K Values", fontsize=14, fontweight='bold')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.savefig(args.out_path + "K_inertia.png", dpi=300)
+    plt.close()
     # =========================
     # Compute composites
     # =========================
@@ -187,20 +199,22 @@ def main():
     # =========================
     min_val = np.nanmin(composites)
     max_val = np.nanmax(composites)
-    raw_max = np.ceil(max(abs(min_val), abs(max_val)))
-    levels = np.linspace(-raw_max, raw_max, 9)
+    raw_max = 25# np.floor(max(abs(min_val), abs(max_val)))
+    levels = np.arange(-raw_max, raw_max+5, 5)
     norm = TwoSlopeNorm(vmin=-raw_max, vcenter=0.0, vmax=raw_max)
 
     fig, axes = plt.subplots(
         1, bestK,
-        figsize=(4 * bestK, 5),
+        figsize=(5 * bestK, 15),
         subplot_kw={'projection': ccrs.PlateCarree()},
-        constrained_layout=True
+        constrained_layout=True,
+        sharex=True,
+        sharey=True
     )
 
     if bestK == 1:
         axes = [axes]
-
+    import matplotlib.ticker as mticker
     for k, ax in enumerate(axes):
         ax.add_feature(cfeature.LAND, facecolor='#f0f0f0')
         ax.coastlines()
@@ -212,12 +226,25 @@ def main():
             transform=ccrs.PlateCarree(),
             extend='both'
         )
-        ax.set_title(f"Cluster {k+1} (n={int(counts[k])})")
+        ax.set_title(f"Cluster {k+1} (\(s\)={int(counts[k])})", fontsize=22)
+        gl = ax.gridlines(draw_labels=True, linewidth=0.25, alpha=0.25, linestyle='--')
+        gl.top_labels = False
+        gl.right_labels = False
+        if k != 0:
+            gl.left_labels = False
 
-    cbar = fig.colorbar(cf, ax=axes, orientation='horizontal', pad=0.08)
-    cbar.set_label(f"{args.parameter} anomalies")
+        if k == bestK - 1:
+            gl.right_labels = True
+        gl.xlabel_style = {'size': 16}
+        gl.ylabel_style = {'size': 16}
+        gl.xlocator = mticker.FixedLocator([-20, 0, 20])
+        gl.ylocator = mticker.FixedLocator([40, 60])
 
-    plt.savefig(os.path.join(args.out_path, "Figure_composites.png"), dpi=300)
+    cbar = fig.colorbar(cf, ax=axes, orientation='horizontal', pad=0.01, shrink=0.5)
+    cbar.set_label(f"{args.parameter} anomalies", fontsize=20)
+    cbar.ax.tick_params(labelsize=16)
+
+    plt.savefig(os.path.join(args.out_path, "Figure_composites.pdf"), bbox_inches='tight', dpi=300)
     plt.close()
 
     # =========================
@@ -260,6 +287,8 @@ def main():
     plt.tight_layout()
     plt.savefig(args.out_path + "Figure_sizes.png", dpi=300)
     plt.close()
+
+
 
     # =========================
     # Month / Year distributions

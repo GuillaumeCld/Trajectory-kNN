@@ -1,4 +1,4 @@
-name: trajectory_knn
+name: traknn
 channels:
   - pytorch
   - conda-forge

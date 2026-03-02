@@ -13,11 +13,11 @@ import torch
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 75]
+T_VALUES = [365 * 75] # time dim
 TRAJ_LENGTHS = [1]
 
 # 50 100 150 200 250
-H, W = 250, 250
+H, W = 50, 50
 K = 10  # number of nearest neighbors
 DEVICE = "cpu"
 

@@ -17,9 +17,11 @@ python case_studies/score.py \
     --file_path "$FILE_PATH" \
     --device "$DEVICE" \
     --algorithm "$ALGORITHM" \
+    # --remove_leap \
+    # --remove_seasonal_cycle
 
 
 
 python case_studies/emdat_temperature_matching.py \
-    --comparison_file "case_studies/results/$PARAMETER/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100_relative.csv" \
+    --comparison_file "case_studies/results/$PARAMETER/${PARAMETER}_trajlen${TRAJ_LENGTH}_k${K}_top100.csv" \
     --top_n 100

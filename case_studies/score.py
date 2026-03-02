@@ -130,7 +130,7 @@ def main():
 
 
 
-
+    
     
     # =========================
     # Compute scores
@@ -166,7 +166,7 @@ def main():
         "time": pd.to_datetime(top_100_times),
         "score": scores_np[top_100_dates]
     })
-    df.to_csv(f"{out_path}_top100.csv", index=False)
+    df.to_csv(f"{out_path}_top100_pca.csv", index=False)
 
 
     times = pd.to_datetime(times)

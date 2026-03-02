@@ -13,3 +13,4 @@ dependencies:
   - cftime
   - matplotlib
   - tqdm
+  - memory_profiler

@@ -12,13 +12,13 @@ import faiss  # Make sure you have faiss-gpu installed
 # ---------------------------------------------------------
 # Experiment grid
 # ---------------------------------------------------------
-T_VALUES = [365 * 75]
-TRAJ_LENGTHS = [1]
+T_VALUES = [365 *10, 365 * 25, 365 * 50, 365 * 75] # time dim
+TRAJ_LENGTHS = [1, 2]
 
-H, W = 250, 250
+H, W = 180, 280
 K = 10  # number of nearest neighbors
 
-RESULTS_FILE = f"experiments/results/faiss_results_gpu_{H}.csv"
+RESULTS_FILE = f"experiments/results/faiss_results_gpu.csv"
 
 # ---------------------------------------------------------
 # Utilities
@@ -73,6 +73,7 @@ def run_faiss_gpu(T, traj_length, use_gpu=True):
     start = time.time()
 
     mat = build_matrix(data, traj_length)
+    del data
     dim = mat.shape[1]
 
     # CPU index first

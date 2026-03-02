@@ -15,10 +15,8 @@ def remove_seasonal_cycle365(data, time):
         raise ValueError("Leap days present. Remove them first.")
 
     # Encode (month, day) as unique integers: 1..365
-    # E.g., Jan 1 -> 1, Jan 2 -> 2, ..., Dec 31 -> 365
     month_cumsum = np.array([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334])
-    # This works because Feb 29 is removed, so Feb always has 28 days
-    md_index = month_cumsum[time.month.values - 1] + (time.day.values - 1)  # 0-based index
+    md_index = month_cumsum[time.month.values - 1] + (time.day.values - 1)
 
     # Preallocate seasonal cycle array
     seasonal_cycle = np.zeros((365, *data.shape[1:]), dtype=data.dtype)
@@ -31,18 +29,15 @@ def remove_seasonal_cycle365(data, time):
     # Divide by counts (only where count > 0)
     seasonal_cycle[counts > 0] /= counts[counts > 0][:, None, None]
 
-    # Deseasonalize
-    deseasonalized = data - seasonal_cycle[md_index]
-
-    return deseasonalized
+    # Deseasonalize in place
+    data -= seasonal_cycle[md_index]
+    return data
 
 
 def cos_lat_weighting(data, latitudes, nlon):
-    wlat = np.cos(np.deg2rad(latitudes))
-    W = np.tile(wlat, (nlon, 1)).T.flatten()
-    nlat = len(latitudes)
-    Ws = np.sqrt(W).reshape(nlat, nlon)
-    return data * Ws
+    latitudes = np.asarray(latitudes)
+    weights = np.sqrt(np.cos(np.deg2rad(latitudes)))[:, np.newaxis]
+    return data * weights
 
 
 def pixelwise_standardize(data):

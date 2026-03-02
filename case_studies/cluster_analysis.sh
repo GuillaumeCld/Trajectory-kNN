@@ -22,7 +22,7 @@ REMOVE_LEAP=true
 REMOVE_SEASONAL_CYCLE=true
 COS_LAT_WEIGHTING=true
 PIXELWISE_STANDARDIZATION=true
-USE_PCA=ftrue
+USE_PCA=true
 
 
 # ==========================================
@@ -63,13 +63,13 @@ fi
 # ==========================================
 # Run scoring
 # ==========================================
-python case_studies/score.py \
---traj_length "$TRAJ_LENGTH" \
---k "$K" \
---parameter "$PARAMETER" \
---file_path "$FILE_PATH" \
---device "$DEVICE" \
---algorithm "$ALGORITHM" \
+# python case_studies/score.py \
+# --traj_length "$TRAJ_LENGTH" \
+# --k "$K" \
+# --parameter "$PARAMETER" \
+# --file_path "$FILE_PATH" \
+# --device "$DEVICE" \
+# --algorithm "$ALGORITHM" \
 
 # ==========================================
 # Clustering analysis

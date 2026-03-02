@@ -28,21 +28,7 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
     # --- Load dataset ---
     ds = xr.open_dataset(nc_path)
 
-    # (T, H, W) !!! load all data into memory !!!
 
-    # --- Handle longitude convention (0–360 → -180–180) ---
-    # if ds.lon.max() > 180:
-    #     ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180))
-    #     ds = ds.sortby("lon")
-
-    # # --- Restrict to 15W to 25E, 35N to 70N ---
-    # ds = ds.sel(
-    #     lon=slice(-15, 25),
-    #     lat=slice(70, 35)
-    # )
-
-    # # --- Restrict to 1979 to 2023 ---
-    # ds = ds.sel(time=slice("1979-01-01", "2013-12-31"))
 
     # --- Load into memory as (T, H, W) float32 ---
 
