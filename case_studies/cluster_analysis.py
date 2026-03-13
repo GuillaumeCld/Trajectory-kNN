@@ -28,7 +28,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 from matplotlib.colors import TwoSlopeNorm
-
+import torch
 import src.preprocessing as pp
 
 plt.rcParams.update({
@@ -104,6 +104,8 @@ def main():
         pd.read_csv(args.date_path)["time"]
     ).dt.normalize()
 
+    nlat = len(lat)
+    nlon = len(lon)
     # =========================
     # Preprocessing
     # =========================
@@ -116,6 +118,10 @@ def main():
     month_vector = pd.to_datetime(time).month
     year_vector = pd.to_datetime(time).year
 
+    if cos_lat_weighting:
+        data = pp.cos_lat_weighting(data, lat, nlon)
+
+
     # =========================
     # Extract abnormal fields
     # =========================
@@ -124,16 +130,13 @@ def main():
     n_abnormal = len(idx_an)
 
     abnormal_fields = data[idx_an, :, :]
-    base_fields = abnormal_fields.copy()
+    base_fields = abnormal_fields.detach().clone() if isinstance(abnormal_fields, torch.Tensor) else abnormal_fields.copy()
 
-    nlat = len(lat)
-    nlon = len(lon)
+
 
     abnormal_fields = abnormal_fields.reshape(n_abnormal, nlat * nlon)
     abnormal_fields = abnormal_fields[:, ~np.isnan(abnormal_fields).any(axis=0)]
 
-    if cos_lat_weighting:
-        data = pp.cos_lat_weighting(data, lat, nlon)
 
     if pixelwise_standardization:
         abnormal_fields = pp.pixelwise_standardize(abnormal_fields)

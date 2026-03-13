@@ -36,7 +36,7 @@ import src.rarity_scoring_interval
 # Cached by file/bounds only. max_entries=2 covers different spatial subsets
 # of the same file. The arrays are shared objects — never mutate them.
 
-@st.cache_resource(show_spinner=False, max_entries=2)
+@st.cache_resource(show_spinner=False, max_entries=1)
 def _load_file_cached(
     file_path, parameter,
     lon_min, lon_max, lat_min, lat_max,
@@ -60,7 +60,7 @@ def _load_file_cached(
 
     lat = ds[lat_dim].values.astype(np.float32)
     lon = ds[lon_dim].values.astype(np.float32)
-    data = ds[parameter].transpose("time", lat_dim, lon_dim).values.astype(np.float32)
+    data = ds[parameter].transpose("time", lat_dim, lon_dim).values.astype(np.float32) / 100.0
     times = pd.to_datetime(ds["time"].values)
     ds.close()
 
@@ -77,7 +77,7 @@ def load_stage1(load_params):
 # cache entry is never mutated. max_entries=4 covers typical combinations:
 # scoring preproc, cluster preproc, cluster with detrend.
 
-@st.cache_resource(show_spinner=False, max_entries=4)
+# @st.cache_resource(show_spinner=False, max_entries=1)
 def load_data_cached(
     file_path, parameter,
     lon_min, lon_max, lat_min, lat_max,
@@ -87,13 +87,14 @@ def load_data_cached(
     """Apply preprocessing to the Stage 1 cached data.
     The returned arrays are owned by this cache entry — do NOT mutate.
     """
-    raw_data, raw_times, lat, lon = _load_file_cached(
+    data, times, lat, lon = _load_file_cached(
         file_path, parameter,
         lon_min, lon_max, lat_min, lat_max,
         start_year, end_year,
     )
-    data = raw_data.copy()
-    times = raw_times.copy()
+    # data = raw_data.copy()
+    # times = raw_times.copy()
+    data = torch.from_numpy(data) 
 
     if remove_leap:
         data, times = pp.remove_bisex_dailydata(data, times)

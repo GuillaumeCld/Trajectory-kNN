@@ -16,8 +16,9 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import matplotlib.pyplot as plt
+from src.rarity_scoring_base import blocked_norm_compute
 
-from data_utils import load_data_cached
+from data_utils import load_data_cached, compute_seasonal_cycle_cached, load_stage1
 from plot_utils import make_cartopy_fig
 
 
@@ -76,16 +77,18 @@ def _run_analogue_search(data, query_idx, traj_length, k, exclusion_zone, device
     dev = torch.device(device_str)
 
     # Move full dataset to device (float32)
-    X = torch.from_numpy(data.reshape(T, D)).to(torch.float32).to(dev)  # (T, D)
+    data = torch.from_numpy(data) if isinstance(data, np.ndarray) else data
+    X = data.reshape(T, D).to(torch.float32).to(dev)  # (T, D)
     X_query = X[query_idx: query_idx + traj_length]                      # (L, D)
 
     # Precompute squared norms
-    norms_all = (X * X).sum(dim=1)               # (T,)
+    r_chunk = 1024
+
+    norms_all = blocked_norm_compute(X, r_chunk, dev)# (T,)
     norms_query = (X_query * X_query).sum(dim=1) # (L,)
 
     # Accumulate trajectory distances
     distances_traj = torch.zeros(N, dtype=torch.float32, device=dev)
-    r_chunk = 1024
 
     for t_offset in range(traj_length):
         q_row = X_query[t_offset]          # (D,)
@@ -120,7 +123,8 @@ def _run_analogue_search(data, query_idx, traj_length, k, exclusion_zone, device
     top_idx = finite_idx[part]
     top_idx = top_idx[np.argsort(distances_np[top_idx])]
 
-    return top_idx, distances_np[top_idx]
+    return top_idx, np.sqrt(distances_np[top_idx])
+
 
 
 # ── Tab render ───────────────────────────────────────────────────────────────
@@ -142,6 +146,10 @@ def render(p):
             "(NPZ uploads do not include the raw fields required for analogue search)."
         )
         return
+
+    # Seasonal cycle for anomaly maps — mirrors the anomaly tab approach
+    seasonal_cycle, md_index, noleap_orig_idx = compute_seasonal_cycle_cached(**load_params)
+    raw_stage1, _, lat, lon = load_stage1(load_params)
 
     # ── Query definition ─────────────────────────────────────────────────────
     t_min = pd.Timestamp(times[0]).date()
@@ -330,15 +338,17 @@ def render(p):
         sel_an_start = analogue_idx[rank_sel_idx]
         sel_an_time = analogue_start_times[rank_sel_idx]
 
-        # Load data for field maps
-        data, _, lat, lon = load_data_cached(**load_params, **preproc_params)
-
         if lat is not None and lon is not None:
-            # Composite over traj_length frames (mean field)
-            query_field = data[query_idx: query_idx + traj_len_an].mean(axis=0)
-            analogue_field = data[
-                sel_an_start: sel_an_start + traj_len_an
-            ].mean(axis=0)
+            # Query: mean anomaly composite over trajectory window
+            q_sl = slice(query_idx, query_idx + traj_len_an)
+            query_field = (
+                raw_stage1[noleap_orig_idx[q_sl]]# - seasonal_cycle[md_index[q_sl]]
+            ).mean(axis=0)
+
+            a_sl = slice(sel_an_start, sel_an_start + traj_len_an)
+            analogue_field = (
+                raw_stage1[noleap_orig_idx[a_sl]]# - seasonal_cycle[md_index[a_sl]]
+            ).mean(axis=0)
 
             vmax = float(np.nanpercentile(
                 np.abs(np.concatenate([query_field.ravel(), analogue_field.ravel()])),
@@ -350,8 +360,8 @@ def render(p):
             with map1:
                 fig_q = make_cartopy_fig(
                     query_field, lat, lon,
-                    title=f"Query: {query_date} (mean over {traj_len_an}d)",
-                    cbar_label=p["parameter"],
+                    title=f"Query anomaly: {query_date} (mean over {traj_len_an}d)",
+                    cbar_label=f"{p['parameter']} raw value",
                     vmax=vmax, figsize=(5, 3.5),
                 )
                 st.pyplot(fig_q, width="stretch")
@@ -362,9 +372,9 @@ def render(p):
                     title=(
                         f"Analogue #{rank_sel_idx + 1}: "
                         f"{sel_an_time.strftime('%Y-%m-%d')} "
-                        f"(dist={dists[rank_sel_idx]:.2f})"
+                        f"(mean over {traj_len_an}d)"
                     ),
-                    cbar_label=p["parameter"],
+                    cbar_label=f"{p['parameter']} raw value",
                     vmax=vmax, figsize=(5, 3.5),
                 )
                 st.pyplot(fig_a, width="stretch")

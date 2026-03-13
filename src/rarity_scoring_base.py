@@ -58,11 +58,13 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     dev = torch.device(device)
+    
+    print(type(data))
 
-    X = torch.from_numpy(data.reshape(T, D)).to(dtype)
+    X = torch.from_numpy(data.reshape(T, D)).to(dtype) if not isinstance(data, torch.Tensor) else data.reshape(T, D).to(dtype)
     if use_pca:
     # low rank svd on spatial dimensions 
-        u, s, v = torch.svd_lowrank(X, q=500, M=X.mean(dim=0, keepdim=True))
+        u, s, v = torch.svd_lowrank(X, q=100, M=X.mean(dim=0, keepdim=True))
         # keep 99% of variance
         variance_explained = torch.cumsum(s**2, dim=0) / torch.sum(s**2)
         q_99 = torch.searchsorted(variance_explained, 0.95).item() + 1

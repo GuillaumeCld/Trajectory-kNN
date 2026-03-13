@@ -29,7 +29,10 @@ def make_cartopy_fig(field, lat, lon, title, cbar_label, vmax=None, figsize=(7, 
     gs = fig.add_gridspec(2, 1, height_ratios=[18, 1], hspace=0.45)
     ax = fig.add_subplot(gs[0], projection=proj)
 
-    norm = mcolors.TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
+    if field.min() >= 0:
+        norm = mcolors.Normalize(vmin=field.min(), vmax=vmax)
+    else :
+        norm = mcolors.TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
     mesh = ax.pcolormesh(
         lon, lat, field,
         cmap="RdBu_r", norm=norm,

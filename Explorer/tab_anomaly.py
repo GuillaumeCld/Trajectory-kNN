@@ -59,7 +59,7 @@ def render(p):
         )
         score_type = st.radio(
             "Ranking by",
-            ["Absolute score", "Monthly z-score"],
+            ["Absolute score"],
             help="Monthly z-score standardises scores relative to the seasonal cycle.",
         )
 

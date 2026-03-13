@@ -22,6 +22,28 @@ from sklearn.metrics import silhouette_samples
 from data_utils import load_data_cached
 import torch
 
+import src.preprocessing as pp
+
+def center_inplace_blockwise(X, block_size=1024):
+    """
+    Center tensor X along dim=0 in-place using block processing.
+
+    Args:
+        X (torch.Tensor): tensor of shape (N, D)
+        block_size (int): number of rows processed per block
+    """
+    # compute mean once
+    mean = X.mean(dim=0)
+
+    # subtract blockwise in-place
+    N = X.shape[0]
+    for i in range(0, N, block_size):
+        X[i:i+block_size].sub_(mean)
+
+    return X
+
+
+
 MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -91,29 +113,37 @@ def render(p):
         else:
             try:
                 with st.spinner("Applying cluster preprocessing..."):
-                    cl_data, _, _, _ = load_data_cached(
+                    cl_data, _, lat, _ = load_data_cached(
                         **load_params,
                         remove_leap=cl_remove_leap,
-                        remove_sc=cl_remove_sc, cos_lat=cl_cos_lat,
-                        pxstd=cl_pxstd, detrend=cl_detrend,
+                        remove_sc=cl_remove_sc, cos_lat=False,
+                        pxstd=False, detrend=cl_detrend,
                     )
 
                 with st.spinner("Extracting top events..."):
-                    top_idx_cl = np.sort(np.argsort(-scores)[:int(n_top_cl)])
-                    fields = cl_data[top_idx_cl]        # (n, H, W)
-                    n_ev, nlat_c, nlon_c = fields.shape
+                    top_idx_cl = np.argsort(-scores)[:int(n_top_cl)]
+                    print(scores[top_idx_cl])
+                    fields_2d = cl_data[top_idx_cl]        # (n, H, W)
+                    n_ev, nlat_c, nlon_c = fields_2d.shape
                     # base_fields: preprocessed (pre-PCA) fields used for composites
-                    base_fields = fields.copy()
+                    base_fields = fields_2d.detach().clone() if isinstance(fields_2d, torch.Tensor) else fields_2d.copy()
+                    if cl_cos_lat:
+                        fields_2d = pp.cos_lat_weighting(fields_2d, lat, nlon_c)
 
-                    fields_2d = fields.reshape(n_ev, nlat_c * nlon_c)
-                    valid_cols = ~np.isnan(fields_2d).any(axis=0)
-                    fields_2d = fields_2d[:, valid_cols]
+                    fields_2d = fields_2d.reshape(n_ev, nlat_c * nlon_c)
+                    # valid_cols = ~np.isnan(fields_2d).any(axis=0)
+                    # fields_2d = fields_2d[:, valid_cols]
 
+           
+                    if cl_pxstd:
+                        fields_2d = pp.pixelwise_standardize(fields_2d)
                 with st.spinner("PCA..." if cl_pca else "Preparing features..."):
                     if cl_pca:
-                        tensor = torch.from_numpy(fields_2d).float()
-                        q = min(500, tensor.shape[0] - 1, tensor.shape[1])
-                        U, S, V = torch.svd_lowrank(tensor, q=q, M=tensor.mean(dim=0, keepdim=True))
+                        fields_2d = torch.from_numpy(fields_2d).float() if not isinstance(fields_2d, torch.Tensor) else fields_2d.float()
+                        q = min(100, fields_2d.shape[0] - 1, fields_2d.shape[1])
+                        print(f"Performing low-rank SVD with q={q} components...")
+                        U, S, _ = torch.svd_lowrank(center_inplace_blockwise(fields_2d, 1024), q=q)
+                        del fields_2d
                         cumvar = torch.cumsum(S**2 / (S**2).sum(), dim=0)
                         npc = max(int(torch.argmax((cumvar >= 0.95).float())) + 1, 3)
                         fields_embed = (U[:, :npc] * S[:npc]).cpu().numpy()
@@ -297,6 +327,8 @@ def render(p):
             )
             gl.top_labels = False
             gl.right_labels = False
+            if col > 0:
+                gl.left_labels = False
             ax.set_title(f"Cluster {k_i + 1}  (n={counts[k_i]})", fontsize=10)
 
         for k_i in range(selected_k, n_rows * n_cols):
@@ -320,6 +352,7 @@ def render(p):
             n_rows, n_cols,
             figsize=(5 * n_cols, 3.5 * n_rows),
             squeeze=False,
+            sharex=True, sharey=True,
         )
         all_vals = np.concatenate([c.ravel() for c in composites])
         vmax_glob = max(float(np.nanpercentile(np.abs(all_vals), 95)), 1e-6)

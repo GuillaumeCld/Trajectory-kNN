@@ -31,28 +31,28 @@ def render(p):
             help="Load data and compute scores from scratch.",
         )
 
-    with col_or:
-        st.markdown(
-            "<div style='text-align:center;margin-top:8px'>or</div>",
-            unsafe_allow_html=True,
-        )
+    # with col_or:
+    #     st.markdown(
+    #         "<div style='text-align:center;margin-top:8px'>or</div>",
+    #         unsafe_allow_html=True,
+    #     )
 
-    with col_upload:
-        uploaded_npz = st.file_uploader(
-            "Upload pre-computed scores (.npz)",
-            type=["npz"],
-            help="A .npz file with 'scores' and 'times' arrays (output of score.py).",
-        )
+    # with col_upload:
+    #     uploaded_npz = st.file_uploader(
+    #         "Upload pre-computed scores (.npz)",
+    #         type=["npz"],
+    #         help="A .npz file with 'scores' and 'times' arrays (output of score.py).",
+    #     )
 
-    if uploaded_npz is not None:
-        try:
-            sc, ti = load_scores_from_npz(uploaded_npz)
-            sc = (sc - sc.min()) / max(float(sc.max() - sc.min()), 1e-12)
-            st.session_state.scores = sc
-            st.session_state.times = ti
-            st.success(f"Loaded {len(sc)} scores from uploaded file.")
-        except Exception as e:
-            st.error(f"Failed to load NPZ: {e}")
+    # if uploaded_npz is not None:
+    #     try:
+    #         sc, ti = load_scores_from_npz(uploaded_npz)
+    #         sc = (sc - sc.min()) / max(float(sc.max() - sc.min()), 1e-12)
+    #         st.session_state.scores = sc
+    #         st.session_state.times = ti
+    #         st.success(f"Loaded {len(sc)} scores from uploaded file.")
+    #     except Exception as e:
+    #         st.error(f"Failed to load NPZ: {e}")
 
     if run_btn:
         if not os.path.exists(p["file_path"]):
@@ -107,7 +107,6 @@ def render(p):
                     use_pca=p["use_pca"],
                 )
                 st.success(f"Computed **{len(scores)}** rarity scores.")
-                print(f"All data in cache: {data.nbytes/1e9:.2f} GB")
             except Exception as e:
                 st.error(f"Error: {e}")
                 st.exception(e)
@@ -119,12 +118,10 @@ def render(p):
         score_times = times[:len(scores)]
 
         st.divider()
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Time steps", len(scores))
-        c2.metric("Max score", f"{scores.max():.4f}")
-        c3.metric("Mean score", f"{scores.mean():.4f}")
-        c4.metric("Min score", f"{scores.min():.4f}")
-
+        c2.metric("Mean score", f"{scores.mean():.2f}")
+        c3.metric(f"Percentiles 25 | 50 | 75 | 95", f" {np.percentile(scores,25):.2f} | {np.percentile(scores,50):.2f} | {np.percentile(scores,75):.2f} | {np.percentile(scores,95):.2f}")
         col_l, col_r = st.columns(2)
         with col_l:
             fig_hist = px.histogram(

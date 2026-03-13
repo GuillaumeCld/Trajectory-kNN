@@ -1,0 +1,414 @@
+% ECMLPKDD 2025 — Demo Track
+% Springer LNCS format
+\documentclass[runningheads]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% ── Document ────────────────────────────────────────────────────────────────
+\begin{document}
+
+\title{TRAKNN Explorer: an Interactive Application for\\
+Rare Meteorological Pattern Discovery}
+
+% \titlerunning{TRAKNN Explorer}
+
+\author{%
+  % Author names — fill in
+  Guillaume Coulaud\inst{1}
+  % \and Author Two\inst{2}
+}
+
+\authorrunning{G. Coulaud}
+
+\institute{
+  Inria, France\\
+  \email{guillaume.coulaud@inria.fr}
+}
+
+\maketitle
+
+% ────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+We present \textsc{Traknn Explorer}, an interactive web application for
+exploring rare and anomalous patterns in daily gridded climate data.
+The application exposes a trajectory-based $k$-nearest-neighbour~(\textsc{knn})
+scoring algorithm that assigns each day a scalar \emph{rarity score}
+measuring how far its surrounding weather trajectory is from all
+historical analogues.
+The interface, built with Streamlit, provides four tightly integrated
+analytical views: (i)~a scoring pipeline that runs the full
+preprocessing and scoring workflow; (ii)~an anomaly explorer that ranks,
+maps, and classifies detected events; (iii)~a cluster analysis module
+that groups the top anomalies with $k$-means and displays composites; and
+(iv)~an analogue search that retrieves the closest historical matches for
+any user-specified query period.
+The tool is aimed at climate scientists and machine-learning researchers
+who need a transparent, parameter-rich, and reproducible entry point into
+spatiotemporal anomaly detection.
+\end{abstract}
+
+\keywords{Spatiotemporal anomaly detection \and
+          Climate extremes \and
+          Trajectory similarity \and
+          $k$-nearest neighbours \and
+          Interactive exploration}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+Daily gridded reanalysis products such as ERA5 contain multi-decadal records
+of atmospheric variables—mean sea-level pressure, temperature, geopotential
+height—sampled on grids with hundreds of thousands of points.
+Detecting which days carry genuinely unusual spatial configurations, rather than
+ordinary seasonal or synoptic variability, is a prerequisite for attribution
+studies, compound-event analyses, and the validation of climate model extremes.
+
+Most existing approaches either rely on univariate indices (which discard
+spatial structure), fit parametric models (which impose distributional
+assumptions), or require labelled reference events.
+We build on the non-parametric, label-free trajectory-kNN framework
+proposed in prior work~\cite{placeholder}, in which a \emph{trajectory}
+is defined as a sequence of $L$ consecutive spatial fields, and rarity is
+quantified by the mean distance to the $k$ most distant non-adjacent
+historical trajectories.
+
+\textsc{Traknn Explorer} makes this framework accessible through an
+interactive web interface.
+Users can load any NetCDF variable, tune preprocessing and algorithm
+parameters, run the scoring pipeline, and immediately inspect results—all
+without writing a single line of code.
+The application is open-source and runs locally, keeping data on the
+researcher's own infrastructure.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{The TRAKNN Algorithm}
+\label{sec:algo}
+
+Let $\{x_t\}_{t=1}^{T}$ be a time series of spatial fields, where
+$x_t \in \mathbb{R}^{H \times W}$ is the gridded observation on day $t$.
+A \emph{trajectory} of length $L$ starting at day $i$ is the concatenation
+$\mathbf{t}_i = (x_i, x_{i+1}, \ldots, x_{i+L-1})$.
+
+\paragraph{Preprocessing.}
+Before scoring, the pipeline applies the following optional steps in order:
+\begin{enumerate}
+  \item \emph{Leap-day removal.} February~29 entries are discarded so that
+        every year has exactly 365 days, yielding a consistent seasonal index.
+  \item \emph{Seasonal cycle removal.} A 365-day climatological mean
+        $\bar{x}^{(\text{doy})}$ is estimated and subtracted from each frame,
+        leaving anomaly fields.
+  \item \emph{Cosine-latitude weighting.} Each spatial field is multiplied
+        element-wise by $\sqrt{\cos(\varphi)}$, where $\varphi$ is the
+        latitude of each grid point, correcting for the convergence of
+        meridians at high latitudes.
+  \item \emph{Pixel-wise standardisation.} Each grid point is standardised
+        to unit temporal variance.
+  \item \emph{PCA dimensionality reduction.} An optional Randomized SVD
+        step retains the principal components that explain at least 95\%
+        of the total variance, reducing the spatial dimension before distance
+        computation.
+\end{enumerate}
+
+\paragraph{Trajectory distance via sliding-window recurrence.}
+The squared Euclidean distance between trajectories $\mathbf{t}_i$ and
+$\mathbf{t}_j$ decomposes as:
+\begin{equation}
+  d^2(\mathbf{t}_i, \mathbf{t}_j)
+  = \sum_{\ell=0}^{L-1} \|x_{i+\ell} - x_{j+\ell}\|^2.
+  \label{eq:traj-dist}
+\end{equation}
+Computing all $\binom{T}{2}$ pairwise trajectory distances naïvely costs
+$O(T^2 L D)$ operations.
+The algorithm exploits a sliding-window recurrence: the distance between
+trajectories shifted by one day satisfies
+$d^2(\mathbf{t}_{i+1}, \mathbf{t}_{j+1}) = d^2(\mathbf{t}_i, \mathbf{t}_j)
+- \|x_i - x_j\|^2 + \|x_{i+L} - x_{j+L}\|^2$,
+reducing the per-step update from $O(LD)$ to $O(D)$ after the first column
+is computed.
+Pairwise spatial distances are computed in blocked matrix operations that
+exploit symmetry and keep memory bounded.
+
+\paragraph{Rarity scoring.}
+For each trajectory $\mathbf{t}_i$, trajectories within a temporal exclusion
+window of $\pm E$ days are masked, and the rarity score is defined as:
+\begin{equation}
+  s_i = \frac{1}{k} \sum_{j \in \mathcal{N}_k(i)} d^2(\mathbf{t}_i, \mathbf{t}_j),
+  \label{eq:score}
+\end{equation}
+where $\mathcal{N}_k(i)$ is the set of indices of the $k$ nearest neighbours
+of $\mathbf{t}_i$ outside the exclusion window.
+A large $s_i$ indicates that no close historical analogue exists, flagging
+the period as genuinely rare.
+
+\paragraph{Algorithm variants.}
+Three scoring modes are available:
+\texttt{base}~(standard exclusion applied at scoring time),
+\texttt{exclusion}~(stricter rolling exclusion per query batch), and
+\texttt{interval}~(interval-level scoring for sub-seasonal analysis).
+
+\paragraph{Implementation.}
+The scoring engine is implemented in PyTorch, enabling transparent
+CPU/GPU execution via a single \texttt{device} parameter.
+Batched blocked matrix multiplication keeps the peak memory footprint
+independent of $T$, which is critical for multi-decadal ERA5 datasets.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Application Description}
+\label{sec:app}
+
+\textsc{Traknn Explorer} is a Streamlit application structured around
+a persistent sidebar for global parameters and four analytical tabs
+(Figure~\ref{fig:app}).
+All intermediate results are stored in the Streamlit session state,
+so that later tabs can operate on the output of earlier ones without
+re-running expensive computations.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/app_screenshot.png}
+  \caption{%
+    The \textsc{Traknn Explorer} interface.
+    The sidebar (left) controls data loading, preprocessing, and algorithm
+    parameters.
+    The four tabs (right) cover the scoring pipeline, anomaly exploration,
+    cluster analysis, and analogue search.}
+  \label{fig:app}
+\end{figure}
+
+\subsection{Sidebar: Global Parameters}
+
+The sidebar collects all parameters shared across tabs:
+\begin{itemize}
+  \item \textbf{Data:} path to a NetCDF file and the variable name
+        (e.g.\ \texttt{msl}, \texttt{t2m}, \texttt{z500}); optional
+        spatial bounding box (latitude/longitude range) and temporal
+        slice (start/end year).
+  \item \textbf{Preprocessing:} toggle switches for leap-day removal,
+        seasonal-cycle subtraction, cosine-latitude weighting, pixel-wise
+        standardisation, and PCA reduction.
+  \item \textbf{Algorithm:} trajectory length $L$, number of neighbours $k$,
+        exclusion zone $E$, algorithm variant, and compute device.
+\end{itemize}
+A two-level caching strategy (file I/O in stage~1; preprocessing in stage~2)
+ensures that changing algorithm parameters does not trigger a disk read, and
+that changing the preprocessing flags does not require re-running the scoring.
+
+\subsection{Tab 1 — Scoring Pipeline}
+
+This tab is the entry point.
+Clicking \emph{Run Scoring} loads and preprocesses the data, then invokes
+the trajectory-kNN engine.
+Users who have already run the pipeline offline can alternatively upload a
+pre-computed \texttt{.npz} file (containing \texttt{scores} and
+\texttt{times} arrays) produced by the command-line script
+\texttt{case\_studies/score.py}.
+
+Once scores are available, the tab displays:
+(i)~a summary row of statistics (number of time steps, maximum, mean, minimum
+score);
+(ii)~an interactive histogram of the score distribution; and
+(iii)~an interactive time series of the normalised scores.
+Scores can be downloaded as a CSV file for further analysis.
+
+\subsection{Tab 2 — Anomaly Explorer}
+
+The Anomaly Explorer allows users to investigate the highest-scoring events
+in detail.
+Users select the number of top events $N$ and choose between ranking by
+absolute score or by monthly $z$-score (which standardises scores within
+each calendar month, highlighting events that are extreme relative to their
+seasonal context).
+
+The tab presents:
+\begin{itemize}
+  \item An interactive \textbf{time series} with the rarity score in the
+        background and the top-$N$ events marked as red dots.
+  \item A \textbf{ranked table} listing event date, score, and a rarity
+        classification (\emph{common}, \emph{rare}, or \emph{extreme})
+        based on the empirical CDF thresholds $F \geq 0.90$ and
+        $F \geq 0.99$, respectively.
+  \item A \textbf{spatial map} for the selected event, rendered with
+        Cartopy in the PlateCarree projection.
+        The displayed field is the anomaly with respect to the 365-day
+        climatology (raw pressure anomaly in hPa), not the preprocessed
+        scoring input.
+\end{itemize}
+Clicking a row in the table synchronises the map view to that event.
+The table is downloadable as CSV.
+
+\subsection{Tab 3 — Cluster Analysis}
+
+The Cluster Analysis tab groups the top-$N$ anomalous events into coherent
+meteorological regimes using $k$-means clustering.
+A sweep over a user-defined range $[K_{\min}, K_{\max}]$ is run, reporting
+the mean silhouette score and inertia for each $K$.
+The best $K$ (maximising mean silhouette) is highlighted automatically.
+
+The user can then inspect, for any selected $K$:
+\begin{itemize}
+  \item \textbf{Composite spatial maps} — mean anomaly field over all events
+        in each cluster, rendered on a geographic projection with a shared
+        diverging colormap and a common colorbar.
+  \item \textbf{Cluster membership bar chart.}
+  \item \textbf{Temporal distributions} — monthly and yearly histograms of
+        events in each cluster, helping reveal seasonal preferences.
+  \item \textbf{Per-event silhouette values} — a horizontal bar chart sorted
+        by silhouette, exposing marginal members or potential outliers.
+  \item \textbf{Date table} — sorted by rarity score, downloadable as CSV.
+\end{itemize}
+The clustering step has its own independent preprocessing controls
+(including a detrending option not available in the scoring tab), so users
+can compare clustering with and without long-term trends.
+
+\subsection{Tab 4 — Analogue Search}
+
+The Analogue Search tab answers a targeted scientific question: given a
+specific weather episode (query period), which past episodes most closely
+resembled it?
+Users specify a query start date and duration (in days); the engine computes
+the trajectory distance between the query and all historical windows,
+applying an exclusion zone to avoid trivially close neighbours.
+
+Results include:
+\begin{itemize}
+  \item \textbf{Rarity assessment} of the query period: normalised score,
+        empirical percentile, and classification label.
+  \item \textbf{Ranked analogue table} listing start dates and summed
+        trajectory distances, downloadable as CSV.
+  \item \textbf{Side-by-side spatial maps} comparing the mean anomaly field
+        of the query period with the selected analogue period.
+  \item \textbf{Temporal distributions} (monthly and yearly) of analogue
+        occurrences.
+  \item \textbf{Annotated time series} showing the rarity score time series
+        with the query period highlighted and analogue positions marked.
+\end{itemize}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Demonstration Outline}
+\label{sec:demo}
+
+The demonstration will use ERA5 mean sea-level pressure (\texttt{msl}) over
+the Euro-Atlantic domain (1950–2023) as the primary dataset.
+The walkthrough will proceed as follows:
+
+\begin{enumerate}
+  \item \textbf{Scoring.} Configure the sidebar (trajectory length $L=5$,
+        $k=10$, exclusion zone $E=5$, seasonal cycle removed, cosine-latitude
+        weighting applied) and run the scoring pipeline.
+        Point out the bimodal score distribution and the seasonal clustering
+        of high-scoring events in winter.
+  \item \textbf{Anomaly exploration.} Switch to monthly $z$-score ranking to
+        surface summer extremes.
+        Click on the 2003 European heat wave and on the 2010 Russian heat wave
+        to display their pressure anomaly maps.
+  \item \textbf{Cluster analysis.} Run the cluster sweep for $K \in [2, 10]$.
+        Inspect the discovered circulation regimes and their seasonal
+        distributions.
+  \item \textbf{Analogue search.} Set the query to the onset of the 2003 heat
+        wave.
+        Show that the closest historical analogues are drawn from the same
+        circulation family and discuss their temporal distribution.
+\end{enumerate}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+\label{sec:related}
+
+Quantile-based thresholding of scalar climate indices (e.g.~temperature
+exceedance) is the most common operational approach to climate extremes but
+ignores spatial coherence~\cite{ipcc_wg1_2021}.
+Matrix-profile-based anomaly detection~\cite{yeh2016matrix} targets
+univariate time series and does not directly extend to spatial fields.
+Isolation Forest~\cite{liu2008isolation} and Local Outlier
+Factor~\cite{breunig2000lof} operate on fixed-length feature vectors and
+require an explicit vectorisation of the spatial field, losing temporal
+ordering.
+Deep-learning approaches such as autoencoders have been applied to
+spatiotemporal data~\cite{munir2019deepant}, but require large labelled or
+well-behaved training sets and are less interpretable.
+
+TRAKNN is closest in spirit to the analogue method widely used in
+meteorology~\cite{van2018statistical,yiou2014anawege}, but it generalises it
+by scoring every trajectory in the record rather than retrieving analogues only
+for a pre-selected query.
+By expressing trajectories as sequences of spatial fields and computing
+distances in the full grid space (or a PCA subspace thereof), the method
+retains spatial structure while remaining non-parametric and label-free.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented \textsc{Traknn Explorer}, an interactive Streamlit
+application built on the trajectory-kNN rarity scoring framework.
+The tool covers the full analytical workflow from raw NetCDF ingestion to
+cluster-level interpretation and targeted analogue retrieval, making it
+suitable both as a research instrument and as a teaching aid for machine
+learning in climate science.
+Future extensions include support for multi-variable trajectories,
+probabilistic rarity calibration, and ensemble comparison modes.
+
+\paragraph{Availability.}
+Source code, installation instructions, and a demo dataset are available at
+\url{https://github.com/placeholder/spatiotemporal-anomalies}.
+The application is licensed under the CeCILL Free Software License.
+
+% ── References ───────────────────────────────────────────────────────────────
+\begin{thebibliography}{99}
+
+\bibitem{placeholder}
+Coulaud, G., et al.:
+Trajectory-kNN rarity scoring for spatiotemporal anomaly detection.
+Preprint (2025)
+
+\bibitem{ipcc_wg1_2021}
+IPCC:
+Climate Change 2021: The Physical Science Basis. Contribution of Working
+Group I to the Sixth Assessment Report.
+Cambridge University Press (2021)
+
+\bibitem{yeh2016matrix}
+Yeh, C.-C.M., et al.:
+Matrix profile I: All pairs similarity joins for time series: a unifying view
+that includes motifs, discords and shapelets.
+In: IEEE ICDM, pp.~1317--1322 (2016)
+
+\bibitem{liu2008isolation}
+Liu, F.T., Ting, K.M., Zhou, Z.-H.:
+Isolation forest.
+In: IEEE ICDM, pp.~413--422 (2008)
+
+\bibitem{breunig2000lof}
+Breunig, M.M., Kriegel, H.-P., Ng, R.T., Sander, J.:
+\textsc{lof}: Identifying density-based local outliers.
+In: ACM SIGMOD, pp.~93--104 (2000)
+
+\bibitem{munir2019deepant}
+Munir, M., Siddiqui, S.A., Dengel, A., Ahmed, S.:
+DeepAnT: A deep learning approach for unsupervised anomaly detection in time
+series.
+IEEE Access \textbf{7}, 1991--2005 (2019)
+
+\bibitem{van2018statistical}
+Van den Dool, H.:
+Empirical Methods in Short-Term Climate Prediction.
+Oxford University Press (2007)
+
+\bibitem{yiou2014anawege}
+Yiou, P.:
+AnaWEGE: a weather generator based on analogues of atmospheric circulation.
+Geoscientific Model Development \textbf{7}(2), 531--543 (2014)
+
+\end{thebibliography}
+
+\end{document}
