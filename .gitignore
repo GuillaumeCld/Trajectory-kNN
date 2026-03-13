@@ -6,6 +6,6 @@ case_studies/results/*
 src/__pycache__/*
 
 *.csv
-*.png
+# *.png
 
 Articolo_Analogues_traj
