@@ -416,7 +416,17 @@ If you use this work in your research, please cite:
         hal_id={hal-05532887},
     }
     ```
-
+- Demonstration paper (Explorer GUI)
+    > Guillaume Coulaud, Davide Faranda. TRAKNN-Explorer: Interactive Discovery of Rare Meteorological Trajectories and Analogues Retrieval. 2026. https://inria.hal.science/hal-05556489.
+    ```bibtex
+    @misc{coulaud:hal-05556489,
+            title={TRAKNN-Explorer: Interactive Discovery of Rare Meteorological Trajectories and Analogues Retrieval},
+            author={Coulaud, Guillaume and Faranda, Davide},
+            url={https://inria.hal.science/hal-05556489},
+            year={2026},
+            hal_id={hal-05556489},
+        }
+    ```
 ---
 
 ## License
