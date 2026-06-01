@@ -1,11 +1,13 @@
 *.egg-info
 Data/*.nc
 Data/*.mat
+Data/*.f32*
 experiments/results/*
 case_studies/results/*
 src/__pycache__/*
 
 *.csv
+.venv/*
 # *.png
 
 Articolo_Analogues_traj

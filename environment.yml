@@ -1,4 +1,4 @@
-name: traknn
+name: traknn2
 channels:
   - pytorch
   - conda-forge
@@ -18,3 +18,5 @@ dependencies:
   - tqdm
   - openpyxl
   - pip
+  - dask
+  - h5py

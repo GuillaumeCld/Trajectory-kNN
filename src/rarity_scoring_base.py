@@ -1,7 +1,6 @@
 import torch
 import xarray as xr
 import numpy as np
-import h5py
 
 # from memory_profiler import profile
 
@@ -32,17 +31,17 @@ def knn_scores(nc_path, var, traj_length, k=10, q_batch=128, r_chunk=4096, devic
 
     # --- Load into memory as (T, H, W) float32 ---
 
-    lat = ds["lat"].values if "lat" in ds else ds["latitude"].values
-    nlat = len(lat)
-    nlon = len(ds["lon"]) if "lon" in ds else len(ds["longitude"])
-    wlat = np.cos(np.deg2rad(lat))
-    W = np.tile(wlat, (nlon, 1)).T.flatten()
-    Ws = np.sqrt(W).reshape(nlat, nlon)
+    # lat = ds["lat"].values if "lat" in ds else ds["latitude"].values
+    # nlat = len(lat)
+    # nlon = len(ds["lon"]) if "lon" in ds else len(ds["longitude"])
+    # wlat = np.cos(np.deg2rad(lat))
+    # W = np.tile(wlat, (nlon, 1)).T.flatten()
+    # Ws = np.sqrt(W).reshape(nlat, nlon)
 
     spatial_dims = [d for d in ds.dims if d != "time"]
     spatial_dims = ['lat', 'lon']
     data = ds[var].transpose("time", *spatial_dims).values.astype(np.float32)
-    data *= Ws  # apply latitude weighting
+    # data *= Ws  # apply latitude weighting
     # --- Close dataset ---
     ds.close()
     return compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device, dtype, exclusion_zone)
@@ -160,7 +159,15 @@ def compute_distances_and_scores(data, traj_length, k, q_batch, r_chunk, device,
 
 
 
+if __name__ == "__main__":
 
-    
+    datapath = "Data/era5_msl_daily_eu.nc"
+    parameter = "msl"
+    traj_length = 7
+    k = 10
+
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+
+    scores =  knn_scores(datapath, parameter, traj_length, k=k, device=dev)
 
 
