@@ -14,10 +14,10 @@ Results are printed to stdout and saved to benchmark_results.csv.
 import time
 import gc
 import csv
+import argparse
 import tracemalloc
 
 import torch
-import numpy as np
 
 from traknn import rarity_scoring_base
 
@@ -135,7 +135,7 @@ def run_v2():
 
 
 def run_v3():
-    reader, T, H, W = _open_reader(DATA_PATH, PARAMETER)
+    reader, T, _, _ = _open_reader(DATA_PATH, PARAMETER)
     return rarity_scoring_ooc(
         reader,
         T              = T,
@@ -154,6 +154,17 @@ def run_v3():
 # =============================================================================
 
 def main():
+    global DATA_PATH
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data-path",
+        default=DATA_PATH,
+        help="Path to the NetCDF input file.",
+    )
+    args = parser.parse_args()
+    DATA_PATH = args.data_path
+
     print(f"Device      : {DEVICE}")
     print(f"Data        : {DATA_PATH}")
     print(f"traj_length : {TRAJ_LENGTH}")
